@@ -1,61 +1,78 @@
-# newspapers-scrap
+```markdown
+# Newspaper Scraper
 
-<a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
-    <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
-</a>
+A Python tool for scraping and analyzing newspaper archives.
 
-Web scrapping of newspapersarchives for analysis and visualisations
+## Project Overview
 
-## Project Organization
+This application allows you to search through historical newspaper archives, extract articles, and process the content for analysis. It provides a configurable framework for working with different newspaper sources.
+
+## Features
+
+- Search newspaper archives using custom queries
+- Extract article content, titles, dates and newspaper information
+- Configurable for different newspaper sources
+- Respectful scraping with built-in delays
+```
+## Project Structure
 
 ```
-├── LICENSE            <- Open-source license if one is chosen
-├── Makefile           <- Makefile with convenience commands like `make data` or `make train`
-├── README.md          <- The top-level README for developers using this project.
-├── data
-│   ├── external       <- Data from third party sources.
-│   ├── interim        <- Intermediate data that has been transformed.
-│   ├── processed      <- The final, canonical data sets for modeling.
-│   └── raw            <- The original, immutable data dump.
-│
-├── docs               <- A default mkdocs project; see www.mkdocs.org for details
-│
-├── models             <- Trained and serialized models, model predictions, or model summaries
-│
-├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-│                         the creator's initials, and a short `-` delimited description, e.g.
-│                         `1.0-jqp-initial-data-exploration`.
-│
-├── pyproject.toml     <- Project configuration file with package metadata for 
-│                         newspapers_scrap and configuration for tools like black
-│
-├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-│
-├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-│   └── figures        <- Generated graphics and figures to be used in reporting
-│
-├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-│                         generated with `pip freeze > requirements.txt`
-│
-├── setup.cfg          <- Configuration file for flake8
-│
-└── newspapers_scrap   <- Source code for use in this project.
-    │
-    ├── __init__.py             <- Makes newspapers_scrap a Python module
-    │
-    ├── config.py               <- Store useful variables and configuration
-    │
-    ├── dataset.py              <- Scripts to download or generate data
-    │
-    ├── features.py             <- Code to create features for modeling
-    │
-    ├── modeling                
-    │   ├── __init__.py 
-    │   ├── predict.py          <- Code to run model inference with trained models          
-    │   └── train.py            <- Code to train models
-    │
-    └── plots.py                <- Code to create visualizations
+newspapers_scrap/
+├── config.py           # Configuration settings
+├── scraper.py          # Core scraping functionality
+└── ...
+
+scripts/
+├── run_search.py       # Script to execute searches
+└── ...
+
+data/
+├── raw/                # Raw scraped data storage
+└── processed/          # Processed data storage
+
+logs/                   # Log files
 ```
 
---------
+## Getting Started
 
+### Prerequisites
+
+- Python 3.x
+- pip
+
+### Installation
+
+1. Clone this repository
+2. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Usage
+
+Run a basic search:
+
+```bash
+  python scripts/run_search.py
+```
+
+## Configuration
+
+The project is configurable via `newspapers_scrap/config.py` where you can adjust:
+
+- Request headers and delays
+- Search parameters
+- Website selectors for different elements
+- Target newspaper configurations
+- File paths for data storage
+- Search limits
+
+## License
+
+MIT License
+
+## Disclaimer
+
+This tool is intended for research purposes only. Always respect website terms of service and robots.txt when scraping content.
+```
