@@ -1,0 +1,25 @@
+# config/selectors.yaml
+SEARCH_SELECTORS:
+  result_item: 'ol.searchresults > li'
+  result_title: '.vlistentrymaincell div > a'
+  result_link: '.vlistentrymaincell div > a'
+  result_newspaper: '.vlistentrymaincell > div:nth-child(2)'
+  result_snippet: '.imgsearchsnippet'
+
+ARTICLE_SELECTORS:
+  'title': '#sectionleveltabtitlearea h2 span'
+  'article_text': '#documentdisplayleftpanesectiontextcontainer'
+  'permalink': '.persistentlinkurl'
+  'article_container': '#documentdisplayleftpanesectionleveltabcontent'
+
+
+NEWSPAPERS:
+  e_newspaper_archives:
+    base_url: 'https://www.e-newspaperarchives.ch'
+    search_url: 'https://www.e-newspaperarchives.ch'
+    selectors:
+      article: 'div.document'
+      title: 'h1.article-title'
+      content: 'div.content-area'
+      date: 'div.date'
+      newspaper: 'div.newspaper-name'

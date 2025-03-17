@@ -1,0 +1,10 @@
+# config/scraping.yaml
+REQUEST:
+  headers:
+    user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+LIMITS:
+  request_delay_min: 1.0
+  request_delay_max: 3.0
+  max_search_pages: 1
+  max_results_per_search: 5

@@ -1,0 +1,10 @@
+# config/urls.yaml
+URLS:
+  base_newspaper_archives: 'https://www.e-newspaperarchives.ch'
+
+SEARCH:
+  params:
+    a: 'q'
+    hs: '1'
+    r: '1'
+    results: '1'

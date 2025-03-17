@@ -6,7 +6,7 @@ import random
 import logging
 import os
 from typing import Dict, List, Any, Optional
-from newspapers_scrap import config
+from newspapers_scrap.config.config import env
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
@@ -18,11 +18,14 @@ logger = logging.getLogger(__name__)
 class NewspaperScraper:
     """Base scraper for newspaper websites"""
 
-    def __init__(self, newspaper_key=None):
+    def __init__(self, newspaper_key=None, config=None):
+        self.config = config or env
         key = newspaper_key or 'e_newspaper_archives'
-        self.newspaper_config = config.NEWSPAPERS[key]
-        self.base_url = self.newspaper_config['base_url']
-        self.headers = config.HEADERS
+        self.newspaper_config = self.config.selectors.newspapers.e_newspaper_archives
+        self.base_url = self.newspaper_config.base_url
+        self.headers = self.config.scraping.request.headers.user_agent
+        self.delay_min = self.config.scraping.limits.request_delay_min
+        self.delay_max = self.config.scraping.limits.request_delay_max
 
     def get_page(self, url: str) -> Optional[BeautifulSoup]:
         """Get and parse a page using Selenium with Edge to execute JavaScript"""
@@ -32,6 +35,7 @@ class NewspaperScraper:
             edge_options.add_argument("--headless")
             edge_options.add_argument("--no-sandbox")
             edge_options.add_argument("--disable-dev-shm-usage")
+            edge_options.add_argument(f"user-agent={self.headers}")
 
             # Add debugging information
             logger.debug("Setting up Edge WebDriver")
@@ -70,10 +74,11 @@ class NewspaperScraper:
         if not soup:
             return {}
 
+        selectors = self.newspaper_config.selectors
         article = {
             "url": url,
-            "title": self._extract_by_selector(soup, self.newspaper_config['title_selector']),
-            "content": self._extract_by_selector(soup, self.newspaper_config['content_selector'], join_texts=True),
+            "title": self._extract_by_selector(soup, selectors.title),
+            "content": self._extract_by_selector(soup, selectors.content, join_texts=True),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
         return article
@@ -81,11 +86,12 @@ class NewspaperScraper:
     def search(self, query: str, page: int = 1) -> List[Dict[str, Any]]:
         """Search for articles and extract results from all newspapers"""
         # Build query parameters based on the actual URL structure
+        search_params = self.config.urls.search.params
         params = {
-            'a': 'q',
-            'hs': '1',
-            'r': '1',
-            'results': '1',
+            'a': search_params.a,
+            'hs': search_params.hs,
+            'r': search_params.r,
+            'results': search_params.results,
             'txq': query
         }
 
@@ -103,12 +109,13 @@ class NewspaperScraper:
             return []
 
         results = []
-        # Update selector to match the actual HTML structure
-        result_items = soup.select("div.vlistentry.searchresult")
+        # Use selectors from config
+        search_selectors = self.config.selectors.search_selectors
+        result_items = soup.select(search_selectors.result_item)
 
         for item in result_items:
             # Find the main link in the search result
-            link_elem = item.select_one("div.vlistentrymaincell a")
+            link_elem = item.select_one(search_selectors.result_link)
             if not link_elem or not link_elem.get('href'):
                 continue
 
@@ -117,12 +124,12 @@ class NewspaperScraper:
             if not article_url.startswith('http'):
                 article_url = self.base_url + article_url
 
-            # Extract title - it's in a span with class containing "Title"
-            title_elem = link_elem.select_one("span[class*='-Title-']")
+            # Extract title using selector from config
+            title_elem = link_elem.select_one(search_selectors.result_title)
             title = title_elem.text.strip() if title_elem else link_elem.text.strip()
 
             # Extract newspaper and date information
-            info_div = item.select_one("div.vlistentrymaincell > div:nth-of-type(2)")
+            info_div = item.select_one(search_selectors.result_newspaper)
             newspaper_date = info_div.text.strip() if info_div else ""
 
             # Split newspaper and date
@@ -144,18 +151,28 @@ class NewspaperScraper:
         # Use Selenium to get the page with JavaScript executed
         soup = self.get_page(url)
         if not soup:
+            logger.warning(f"Could not fetch page content for {url}")
             return ""
 
-        # Target the container with the article text
-        content_container = soup.select_one("#documentdisplayleftpanesectiontextcontainer")
+        # Use article selector from config - correct path to article selectors
+        article_selectors = self.config.selectors.article_selectors
+        content_selector = article_selectors.article_text
+        content_container = soup.select_one(content_selector)
+
         if not content_container:
-            logger.warning(f"Could not find article content container for {url}")
+            logger.warning(f"Could not find article content container for {url} with the selector: {content_selector}")
             return ""
 
         logger.debug(f"Content container HTML: {content_container}")
 
         # Extract text from the container
-        text = content_container.get_text(strip=True, separator="\n\n")
+        # Extract text from the container - combine all paragraph texts
+        paragraphs = content_container.find_all('p')
+        if paragraphs:
+            text = "\n\n".join([p.get_text(strip=True) for p in paragraphs])
+        else:
+            # Fallback to getting all text if no paragraphs found
+            text = content_container.get_text(strip=True, separator="\n\n")
         return text
 
     def get_article_with_content(self, url: str) -> Dict[str, Any]:
@@ -165,8 +182,13 @@ class NewspaperScraper:
             return {}
 
         # Get basic article info
-        article = {"url": url, "title": self._extract_by_selector(soup, self.newspaper_config['title_selector']),
-                   "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "content": self.scrape_article_content(url)}
+        selectors = self.newspaper_config.selectors
+        article = {
+            "url": url,
+            "title": self._extract_by_selector(soup, selectors.title),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "content": self.scrape_article_content(url)
+        }
 
         # Get full article content
         return article
@@ -196,10 +218,12 @@ class NewspaperScraper:
 
         # Create output directory
         if not output_dir:
-            output_dir = os.path.join("data", "articles", query.replace(" ", "_"))
+            raw_data_dir = self.config.storage.storage.raw_data_dir
+            output_dir = os.path.join(raw_data_dir, "articles", query.replace(" ", "_"))
         os.makedirs(output_dir, exist_ok=True)
 
         # Process each page of search results
+        max_pages = min(max_pages, self.config.scraping.limits.max_search_pages)
         for page in range(1, max_pages + 1):
             logger.info(f"Processing search results page {page} for query '{query}'")
 
@@ -210,8 +234,9 @@ class NewspaperScraper:
                 break
 
             # Process each article
-            for i, result in enumerate(search_results):
-                logger.info(f"Processing article {i + 1}/{len(search_results)}: {result['title']}")
+            max_results = min(len(search_results), self.config.scraping.limits.max_results_per_search)
+            for i, result in enumerate(search_results[:max_results]):
+                logger.info(f"Processing article {i + 1}/{max_results}: {result['title']}")
 
                 # Get article content
                 self.add_delay()  # Be respectful with requests
@@ -258,7 +283,6 @@ class NewspaperScraper:
             return "\n\n".join([el.text.strip() for el in elements])
         return elements[0].text.strip()
 
-    @staticmethod
-    def add_delay():
+    def add_delay(self):
         """Add random delay between requests to be respectful"""
-        time.sleep(random.uniform(config.REQUEST_DELAY_MIN, config.REQUEST_DELAY_MAX))
+        time.sleep(random.uniform(self.delay_min, self.delay_max))

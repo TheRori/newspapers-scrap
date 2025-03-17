@@ -1,0 +1,6 @@
+# config/storage.yaml
+PATHS:
+  raw_data_dir: 'data/raw'
+  processed_data_dir: 'data/processed'
+  topics_data_dir: 'data/by_topic'
+  logs_dir: 'logs'

@@ -1,42 +1,72 @@
 # scripts/run_search.py
-import os
-import sys
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+import argparse
+import time
 import logging
 from newspapers_scrap.scraper import NewspaperScraper
-from newspapers_scrap import config
+from newspapers_scrap.config.config import env  # Import the new config
+from newspapers_scrap.data_manager.organizer import organize_article
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Set up logging
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
 def main():
-    newspaper_key = 'e_newspaper_archives'
-    scraper = NewspaperScraper(newspaper_key)
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Search and scrape newspaper articles')
+    parser.add_argument('query', type=str, help='Search term')
+    parser.add_argument('--pages', type=int,
+                        default=env.scraping.limits.max_search_pages,  # Use config value
+                        help='Maximum number of search pages to process')
+    parser.add_argument('--newspapers', type=str, nargs='+',
+                        default=['e-newspaperarchives.ch'],
+                        help='Newspaper sources to search')
+    args = parser.parse_args()
 
-    search_query = "informatique"
-    logger.info(f"Searching for: '{search_query}'")
+    # Track timing
+    start_time = time.time()
 
-    # Search, extract content and save articles
-    articles = scraper.save_articles_from_search(
-        query=search_query,
-        output_dir="data/articles/informatique",
-        max_pages=3  # Adjust based on how many pages you want to process
-    )
+    # Create scraper instance with the new config
+    scraper = NewspaperScraper(config=env)
 
-    logger.info(f"Successfully saved {len(articles)} articles")
+    # Search for articles
+    results = []
+    logger.info(f"Searching for '{args.query}' across {args.pages} pages")
 
+    # Get search results
+    search_results = scraper.search(args.query, page=1)
 
-if __name__ == "__main__":
-    main()
+    # Process each article
+    for result in search_results:
+        logger.info(f"Processing article: {result['title']}")
+
+        # Get article content
+        scraper.add_delay()
+        article_content = scraper.scrape_article_content(result['url'])
+
+        if not article_content:
+            logger.warning(f"No content found for article: {result['title']}")
+            continue
+
+        # Use organizer to manage the file storage
+        metadata = organize_article(
+            article_text=article_content,
+            url=result['url'],
+            search_term=args.query,
+            article_title=result['title'],
+            newspaper_name=result.get('newspaper', 'Unknown'),
+            date_str=result.get('date', '')
+        )
+
+        # Add to results list
+        result['processed'] = True
+        results.append(result)
+
+    # Print summary
+    duration = time.time() - start_time
+    logger.info(f"Processing complete. {len(results)} articles processed in {duration:.2f} seconds")
+
 
 if __name__ == "__main__":
     main()
