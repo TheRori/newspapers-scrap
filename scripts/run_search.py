@@ -9,7 +9,7 @@ from newspapers_scrap.scraper import NewspaperScraper
 from newspapers_scrap import config
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout)
@@ -19,31 +19,24 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    logger.info("Starting newspaper search process")
-    scraper = NewspaperScraper()
+    newspaper_key = 'e_newspaper_archives'
+    scraper = NewspaperScraper(newspaper_key)
 
-    search_query = "hello world"
+    search_query = "informatique"
     logger.info(f"Searching for: '{search_query}'")
 
-    search_results = scraper.search(search_query)
-    logger.info(f"Found {len(search_results)} results for query '{search_query}'")
+    # Search, extract content and save articles
+    articles = scraper.save_articles_from_search(
+        query=search_query,
+        output_dir="data/articles/informatique",
+        max_pages=3  # Adjust based on how many pages you want to process
+    )
 
-    # Print results with logger instead of print
-    for i, result in enumerate(search_results, 1):
-        logger.info(f"--- Result {i} ---")
-        logger.info(f"Title: {result['title']}")
-        logger.info(f"URL: {result['url']}")
-        logger.info(f"Newspaper: {result.get('newspaper', 'N/A')}")
-        logger.info(f"Date: {result.get('date', 'N/A')}")
+    logger.info(f"Successfully saved {len(articles)} articles")
 
-        # Only log snippet if it exists and isn't empty
-        if result.get('snippet'):
-            logger.info(f"Snippet: {result.get('snippet')}")
 
-    logger.info("Adding delay before next operation")
-    NewspaperScraper.add_delay()
-    logger.info("Search process completed")
-
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
