@@ -26,6 +26,8 @@ async def async_main():
     parser.add_argument('--pages', type=int, help='Maximum pages to search', default=1)
     parser.add_argument('--proxies', type=str, default=None, help='Path to JSON file containing proxy configurations')
     parser.add_argument('--cantons', type=str, nargs='+', help='Canton codes to search (e.g., GE for Geneva)')
+    parser.add_argument('--deq', type=str, help='Filter by decade (e.g., 197 for 1970-1979, 200 for 2000-2009)')
+    parser.add_argument('--yeq', type=str, help='Filter by specific year (e.g., 1972, 2002)')
 
     args = parser.parse_args()
 
@@ -52,7 +54,9 @@ async def async_main():
         output_dir=args.output,
         max_pages=args.pages,
         newspapers=args.newspapers,
-        cantons=args.cantons
+        cantons=args.cantons,
+        deq=args.deq,
+        yeq=args.yeq
     )
 
     # Print summary

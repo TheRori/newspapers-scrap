@@ -149,8 +149,8 @@ class NewspaperScraper:
                     logger.error(f"Max retries reached for {url}")
                     return None
 
-    async def search(self, query: str, page: int = 1, newspapers: List[str] = None, cantons: List[str] = None) -> List[
-        Dict[str, Any]]:
+    async def search(self, query: str, page: int = 1, newspapers: List[str] = None,
+                     cantons: List[str] = None, deq: int = None, yeq: int = None) -> List[Dict[str, Any]]:
         """
         Search for articles and extract results from specified newspapers and cantons
 
@@ -159,6 +159,8 @@ class NewspaperScraper:
             page: The page number for pagination
             newspapers: List of newspaper codes to restrict the search to
             cantons: List of canton codes to restrict the search to
+            deq: Filter by decade (e.g., 197 for 1970-1979, 200 for 2000-2009)
+            yeq: Filter by specific year (e.g., 1972, 2002)
         """
         search_params = self.config.urls.search.params
         params = {
@@ -177,10 +179,18 @@ class NewspaperScraper:
         if cantons:
             params['ccq'] = ','.join(cantons)
 
+        # Add decade filter if specified
+        if deq is not None:
+            params['deq'] = str(deq)
+
+        # Add year filter if specified
+        if yeq is not None:
+            params['yeq'] = str(yeq)
+
         if page > 1:
             params['page'] = str(page)
 
-        query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
+        query_string = '&'.join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items()])
         search_url = f"{self.base_url}/?{query_string}"
         logger.info(f"Searching with URL: {search_url}")
         soup = await self.get_page(search_url)
@@ -233,7 +243,8 @@ class NewspaperScraper:
 
     async def save_articles_from_search(self, query: str, output_dir: str = None,
                                         max_pages: int = 1, newspapers: List[str] = None,
-                                        cantons: List[str] = None) -> List[Dict[str, Any]]:
+                                        cantons: List[str] = None, deq: int = None,
+                                        yeq: int = None) -> List[Dict[str, Any]]:
         """
         Search for articles, extract their content, and save using the organizer
 
@@ -243,6 +254,8 @@ class NewspaperScraper:
             max_pages: Maximum number of search result pages to process
             newspapers: List of newspaper codes to restrict the search to
             cantons: List of canton codes to restrict the search to
+            deq: Filter by decade (e.g., 197 for 1970-1979, 200 for 2000-2009)
+            yeq: Filter by specific year (e.g., 1972, 2002)
 
         Returns:
             List of article metadata
@@ -253,7 +266,7 @@ class NewspaperScraper:
 
             for page in range(1, max_pages + 1):
                 logger.info(f"Processing search results page {page} for query '{query}'")
-                search_results = await self.search(query, page, newspapers, cantons)
+                search_results = await self.search(query, page, newspapers, cantons, deq, yeq)
                 if not search_results:
                     logger.info(f"No results found on page {page}. Stopping pagination.")
                     break
@@ -302,6 +315,8 @@ class NewspaperScraper:
         await smart_delay(self.delay_min, self.delay_max)
 
     def save_articles_sync(self, query: str, output_dir: str = None, max_pages: int = 1,
-                           newspapers: List[str] = None):
+                           newspapers: List[str] = None, cantons: List[str] = None,
+                           deq: int = None, yeq: int = None):
         """Synchronous wrapper for the async save_articles_from_search method"""
-        return asyncio.run(self.save_articles_from_search(query, output_dir, max_pages, newspapers))
+        return asyncio.run(self.save_articles_from_search(query, output_dir, max_pages,
+                                                          newspapers, cantons, deq, yeq))
