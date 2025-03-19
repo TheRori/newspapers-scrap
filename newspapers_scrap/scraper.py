@@ -4,12 +4,16 @@ import time
 import logging
 import random
 import asyncio
+import urllib
 from typing import Optional, List, Any, Dict, Coroutine
 
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
 from newspapers_scrap.config.config import env
+from newspapers_scrap.data_manager import organize_article
+from newspapers_scrap.security import UserAgentManager, ProxyManager, BrowserFingerprint, smart_delay, \
+    exponential_backoff, SimpleRobotsParser
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +31,30 @@ class NewspaperScraper:
         self.delay_max = self.config.scraping.limits.request_delay_max
         self._playwright = None
         self._browser = None
+        self.ua_manager = UserAgentManager()
+        self.fingerprint_manager = BrowserFingerprint()
+        self.robots_parser = SimpleRobotsParser(user_agent="NewspaperResearchBot/1.0")
+        self.respect_robots_delay = True
+        self.proxy_manager = ProxyManager()
+        self.current_user_agent = None
+        self.current_fingerprint = None
 
     async def _init_playwright(self):
-        """Initialize playwright and browser if not already done"""
-        if self._playwright is None:
+        """Initialize Playwright with standard browser"""
+        if not self._playwright:
             self._playwright = await async_playwright().start()
+
+            # Get random user agent and fingerprint
+            self.current_user_agent = self.ua_manager.get_random_user_agent()
+            self.current_fingerprint = self.fingerprint_manager.get_random_fingerprint()
+
+            # Use standard browser launch instead of BrightData
             self._browser = await self._playwright.chromium.launch(
-                headless=True
+                headless=True,  # Set to False for debugging
+                args=['--disable-dev-shm-usage']
             )
+
+            logger.info("Launched standard Chromium browser")
 
     async def _close_playwright(self):
         """Close browser and playwright instances"""
@@ -45,40 +65,99 @@ class NewspaperScraper:
             await self._playwright.stop()
             self._playwright = None
 
-    async def get_page(self, url: str) -> Optional[BeautifulSoup]:
-        """Get and parse a page using Playwright to execute JavaScript"""
-        try:
-            # Make sure playwright is initialized
-            await self._init_playwright()
+    async def get_page(self, url, max_retries=3):
+        """Fetch a webpage using Playwright with robots.txt warnings"""
+        # Check robots.txt but don't block
+        await self.robots_parser.check_url(url)
 
-            # Create a new context with custom user agent
-            context = await self._browser.new_context(
-                user_agent=self.headers,
-                viewport={'width': 1280, 'height': 720}
-            )
+        # Check for robots.txt crawl delay
+        if self.respect_robots_delay:
+            parsed_url = urllib.parse.urlparse(url)
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            delay = await self.robots_parser.get_crawl_delay(base_url)
+            if delay:
+                self.delay_min = self.delay_max = delay
 
-            # Create a new page and navigate to URL
-            page = await context.new_page()
-            await page.goto(url, wait_until="networkidle")
+        retry_count = 0
 
-            # Wait for the page to load completely
-            await page.wait_for_load_state("networkidle")
+        max_retries = 3
+        retry_count = 0
 
-            # Get page content and parse with BeautifulSoup
-            html = await page.content()
-            soup = BeautifulSoup(html, 'html.parser')
+        while retry_count < max_retries:
+            try:
+                # Make sure playwright is initialized
+                await self._init_playwright()
 
-            # Close the context to free resources
-            await context.close()
+                # Create context with realistic browser fingerprinting
+                context = await self._browser.new_context(
+                    user_agent=self.current_user_agent,
+                    viewport=self.current_fingerprint['viewport'],
+                    locale=self.current_fingerprint['locale'],
+                    timezone_id=self.current_fingerprint['timezone_id']
+                )
 
-            return soup
+                # Add common headers to appear more like a real browser
+                await context.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => false
+                    });
+                """)
 
-        except Exception as e:
-            logger.error(f"Error fetching {url} with Playwright: {e}")
-            return None
+                # Create a new page and navigate to URL
+                page = await context.new_page()
+                response = await page.goto(url, wait_until="networkidle", timeout=30000)
 
-    async def search(self, query: str, page: int = 1) -> List[Dict[str, Any]]:
-        """Search for articles and extract results from all newspapers"""
+                # Check if we hit a rate limit or other error
+                if response.status >= 400:
+                    retry_count += 1
+                    await context.close()
+                    wait_time = exponential_backoff(retry_count)
+                    logger.warning(f"Got status {response.status}, retrying after {wait_time:.2f}s")
+                    await asyncio.sleep(wait_time)
+                    continue
+
+                # Add random scrolling behavior like a human
+                page_height = await page.evaluate('document.body.scrollHeight')
+                view_port_height = self.current_fingerprint['viewport']['height']
+
+                # Scroll down in steps
+                for i in range(0, page_height, view_port_height // 2):
+                    await page.evaluate(f'window.scrollTo(0, {i})')
+                    # Random pause between scrolls like a human would
+                    await asyncio.sleep(random.uniform(0.1, 0.5))
+
+                # Wait for the page to load completely
+                await page.wait_for_load_state("networkidle")
+
+                # Get page content and parse with BeautifulSoup
+                html = await page.content()
+                soup = BeautifulSoup(html, 'html.parser')
+
+                # Close the context to free resources
+                await context.close()
+
+                return soup
+
+            except Exception as e:
+                retry_count += 1
+                logger.error(f"Error fetching {url} with Playwright: {e}")
+                wait_time = exponential_backoff(retry_count)
+                if retry_count < max_retries:
+                    logger.info(f"Retrying after {wait_time:.2f} seconds...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"Max retries reached for {url}")
+                    return None
+
+    async def search(self, query: str, page: int = 1, newspapers: List[str] = None) -> List[Dict[str, Any]]:
+        """
+        Search for articles and extract results from specified newspapers
+
+        Args:
+            query: The search query text
+            page: The page number for pagination
+            newspapers: List of newspaper codes to restrict the search to
+        """
         search_params = self.config.urls.search.params
         params = {
             'a': search_params.a,
@@ -87,8 +166,14 @@ class NewspaperScraper:
             'results': search_params.results,
             'txq': query
         }
+
+        # Add newspaper filters if specified
+        if newspapers:
+            params['puq'] = ','.join(newspapers)
+
         if page > 1:
             params['page'] = str(page)
+
         query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
         search_url = f"{self.base_url}/?{query_string}"
         logger.info(f"Searching with URL: {search_url}")
@@ -138,19 +223,29 @@ class NewspaperScraper:
             logger.warning(f"Could not find article content for {url}")
         return text
 
-    async def save_articles_from_search(self, query: str, output_dir: str = None, max_pages: int = 1) -> None:
-        """Search for articles, extract their content, and save to files"""
+    from newspapers_scrap.data_manager.organizer import organize_article
+
+    async def save_articles_from_search(self, query: str, output_dir: str = None,
+                                        max_pages: int = 1, newspapers: List[str] = None) -> List[Dict[str, Any]]:
+        """
+        Search for articles, extract their content, and save using the organizer
+
+        Args:
+            query: The search query text
+            output_dir: Directory to save the articles (override default location)
+            max_pages: Maximum number of search result pages to process
+            newspapers: List of newspaper codes to restrict the search to
+
+        Returns:
+            List of article metadata
+        """
         try:
             all_results = []
-            if not output_dir:
-                raw_data_dir = self.config.storage.paths.raw_data_dir
-                output_dir = os.path.join(raw_data_dir, "articles", query.replace(" ", "_"))
-            os.makedirs(output_dir, exist_ok=True)
             max_pages = min(max_pages, self.config.scraping.limits.max_search_pages)
 
             for page in range(1, max_pages + 1):
                 logger.info(f"Processing search results page {page} for query '{query}'")
-                search_results = await self.search(query, page)
+                search_results = await self.search(query, page, newspapers)
                 if not search_results:
                     logger.info(f"No results found on page {page}. Stopping pagination.")
                     break
@@ -163,20 +258,17 @@ class NewspaperScraper:
                     if not article_content:
                         logger.warning(f"No content found for article: {result['title']}")
                         continue
-                    date_str = result.get('date', '').replace(' ', '_').replace(',', '')
-                    safe_title = ''.join(c if c.isalnum() else '_' for c in result['title'][:30])
-                    filename = f"{date_str}_{safe_title}.txt"
-                    filepath = os.path.join(output_dir, filename)
-                    with open(filepath, 'w', encoding='utf-8') as f:
-                        f.write(f"Title: {result['title']}\n")
-                        f.write(f"URL: {result['url']}\n")
-                        f.write(f"Newspaper: {result.get('newspaper', 'N/A')}\n")
-                        f.write(f"Date: {result.get('date', 'N/A')}\n\n")
-                        f.write(article_content)
-                    logger.info(f"Saved article to {filepath}")
-                    result['full_content'] = article_content
-                    result['saved_path'] = filepath
-                    all_results.append(result)
+
+                    metadata = organize_article(
+                        article_text=article_content,
+                        url=result['url'],
+                        search_term=query,
+                        article_title=result['title'],
+                        newspaper_name=result.get('newspaper', 'Unknown'),
+                        date_str=result.get('date', '')
+                    )
+
+                    all_results.append(metadata)
 
                 if page < max_pages:
                     await self.add_delay()
@@ -197,9 +289,10 @@ class NewspaperScraper:
         return elements[0].text.strip()
 
     async def add_delay(self):
-        """Add random delay between requests to be respectful"""
-        await asyncio.sleep(random.uniform(self.delay_min, self.delay_max))
+        """Add smart delay between requests to be respectful"""
+        await smart_delay(self.delay_min, self.delay_max)
 
-    def save_articles_sync(self, query: str, output_dir: str = None, max_pages: int = 1) -> List[Dict[str, Any]]:
+    def save_articles_sync(self, query: str, output_dir: str = None, max_pages: int = 1,
+                           newspapers: List[str] = None):
         """Synchronous wrapper for the async save_articles_from_search method"""
-        return asyncio.run(self.save_articles_from_search(query, output_dir, max_pages))
+        return asyncio.run(self.save_articles_from_search(query, output_dir, max_pages, newspapers))

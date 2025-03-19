@@ -18,10 +18,31 @@ def organize_article(
     """
     Organize an article into the data structure and return its metadata
     """
-    # Create a safe ID from the article info
+    # Parse date with multiple language support
+    date_obj = None
+
+    # Try different locales for date parsing
+    locales = ['en_US.UTF-8', 'fr_FR.UTF-8', 'de_DE.UTF-8']
+
+    import locale
+    original_locale = locale.getlocale(locale.LC_TIME)
+
+    for loc in locales:
+        try:
+            locale.setlocale(locale.LC_TIME, loc)
+            date_obj = datetime.strptime(date_str, "%d. %B %Y")
+            break
+        except (ValueError, locale.Error):
+            continue
+
+    # Restore original locale
     try:
-        date_obj = datetime.strptime(date_str, "%d. %B %Y")
-    except ValueError:
+        locale.setlocale(locale.LC_TIME, original_locale)
+    except locale.Error:
+        locale.setlocale(locale.LC_TIME, '')
+
+    # Default to current date if parsing fails
+    if not date_obj:
         date_obj = datetime.now()
         print(f"Warning: Could not parse date '{date_str}', using current date")
 

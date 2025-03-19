@@ -95,6 +95,12 @@ class UrlsConfig(BaseModel):
     search: SearchConfig = Field(alias="SEARCH")
 
 
+class BrightDataConfig(BaseModel):
+    username: str
+    password: str
+    zone: str
+
+
 class Config(BaseModel):
     urls: UrlsConfig
     selectors: Selectors
@@ -162,7 +168,7 @@ def load_config() -> Config:
         urls=resolved_configs["urls"],
         selectors=resolved_configs["selectors"],
         scraping=resolved_configs["scraping"],
-        storage=resolved_configs["storage"]
+        storage=resolved_configs["storage"],
     )
 
 
