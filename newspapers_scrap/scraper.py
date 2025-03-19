@@ -149,14 +149,16 @@ class NewspaperScraper:
                     logger.error(f"Max retries reached for {url}")
                     return None
 
-    async def search(self, query: str, page: int = 1, newspapers: List[str] = None) -> List[Dict[str, Any]]:
+    async def search(self, query: str, page: int = 1, newspapers: List[str] = None, cantons: List[str] = None) -> List[
+        Dict[str, Any]]:
         """
-        Search for articles and extract results from specified newspapers
+        Search for articles and extract results from specified newspapers and cantons
 
         Args:
             query: The search query text
             page: The page number for pagination
             newspapers: List of newspaper codes to restrict the search to
+            cantons: List of canton codes to restrict the search to
         """
         search_params = self.config.urls.search.params
         params = {
@@ -170,6 +172,10 @@ class NewspaperScraper:
         # Add newspaper filters if specified
         if newspapers:
             params['puq'] = ','.join(newspapers)
+
+        # Add canton filters if specified
+        if cantons:
+            params['ccq'] = ','.join(cantons)
 
         if page > 1:
             params['page'] = str(page)
@@ -226,7 +232,8 @@ class NewspaperScraper:
     from newspapers_scrap.data_manager.organizer import organize_article
 
     async def save_articles_from_search(self, query: str, output_dir: str = None,
-                                        max_pages: int = 1, newspapers: List[str] = None) -> List[Dict[str, Any]]:
+                                        max_pages: int = 1, newspapers: List[str] = None,
+                                        cantons: List[str] = None) -> List[Dict[str, Any]]:
         """
         Search for articles, extract their content, and save using the organizer
 
@@ -235,6 +242,7 @@ class NewspaperScraper:
             output_dir: Directory to save the articles (override default location)
             max_pages: Maximum number of search result pages to process
             newspapers: List of newspaper codes to restrict the search to
+            cantons: List of canton codes to restrict the search to
 
         Returns:
             List of article metadata
@@ -245,7 +253,7 @@ class NewspaperScraper:
 
             for page in range(1, max_pages + 1):
                 logger.info(f"Processing search results page {page} for query '{query}'")
-                search_results = await self.search(query, page, newspapers)
+                search_results = await self.search(query, page, newspapers, cantons)
                 if not search_results:
                     logger.info(f"No results found on page {page}. Stopping pagination.")
                     break
@@ -265,7 +273,8 @@ class NewspaperScraper:
                         search_term=query,
                         article_title=result['title'],
                         newspaper_name=result.get('newspaper', 'Unknown'),
-                        date_str=result.get('date', '')
+                        date_str=result.get('date', ''),
+                        canton=cantons[0] if cantons else None
                     )
 
                     all_results.append(metadata)

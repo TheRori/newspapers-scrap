@@ -13,7 +13,8 @@ def organize_article(
         search_term: str,
         article_title: str,
         newspaper_name: str,
-        date_str: str
+        date_str: str,
+        canton: Optional[str] = None
 ) -> Dict:
     """
     Organize an article into the data structure and return its metadata
@@ -78,7 +79,8 @@ def organize_article(
         "url": url,
         "raw_path": str(raw_path),
         "content": article_text,
-        "word_count": len(article_text.split())
+        "word_count": len(article_text.split()),
+        "canton": canton
     }
 
     # Save processed content

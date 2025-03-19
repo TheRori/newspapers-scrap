@@ -17,7 +17,6 @@ logging.basicConfig(level=logging.DEBUG,
                     force=True)
 logger = logging.getLogger(__name__)
 
-
 async def async_main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Search for newspaper articles')
@@ -26,6 +25,7 @@ async def async_main():
     parser.add_argument('--output', type=str, help='Output directory to save articles', default=None)
     parser.add_argument('--pages', type=int, help='Maximum pages to search', default=1)
     parser.add_argument('--proxies', type=str, default=None, help='Path to JSON file containing proxy configurations')
+    parser.add_argument('--cantons', type=str, nargs='+', help='Canton codes to search (e.g., GE for Geneva)')
 
     args = parser.parse_args()
 
@@ -51,7 +51,8 @@ async def async_main():
         query=args.query,
         output_dir=args.output,
         max_pages=args.pages,
-        newspapers=args.newspapers
+        newspapers=args.newspapers,
+        cantons=args.cantons
     )
 
     # Print summary
