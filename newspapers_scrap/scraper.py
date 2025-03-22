@@ -1,7 +1,9 @@
 # newspapers_scrap/scraper.py
+import logging_config
+import logging
+logger = logging.getLogger(__name__)
 import os
 import time
-import logging
 import random
 import asyncio
 import urllib
@@ -15,7 +17,6 @@ from newspapers_scrap.data_manager import organize_article
 from newspapers_scrap.security import UserAgentManager, ProxyManager, BrowserFingerprint, smart_delay, \
     exponential_backoff, SimpleRobotsParser
 
-logger = logging.getLogger(__name__)
 
 
 class NewspaperScraper:
@@ -67,8 +68,11 @@ class NewspaperScraper:
 
     async def get_page(self, url, max_retries=3):
         """Fetch a webpage using Playwright with robots.txt warnings"""
+        logger.info(f"Starting to fetch page: {url}")
+
         # Check robots.txt but don't block
         await self.robots_parser.check_url(url)
+        logger.info(f"Checked robots.txt for {url}")
 
         # Check for robots.txt crawl delay
         if self.respect_robots_delay:
@@ -77,16 +81,15 @@ class NewspaperScraper:
             delay = await self.robots_parser.get_crawl_delay(base_url)
             if delay:
                 self.delay_min = self.delay_max = delay
+                logger.info(f"Respecting crawl delay of {delay} seconds for {base_url}")
 
-        retry_count = 0
-
-        max_retries = 3
         retry_count = 0
 
         while retry_count < max_retries:
             try:
                 # Make sure playwright is initialized
                 await self._init_playwright()
+                logger.info("Playwright initialized")
 
                 # Create context with realistic browser fingerprinting
                 context = await self._browser.new_context(
@@ -95,6 +98,7 @@ class NewspaperScraper:
                     locale=self.current_fingerprint['locale'],
                     timezone_id=self.current_fingerprint['timezone_id']
                 )
+                logger.info("Browser context created with fingerprinting")
 
                 # Add common headers to appear more like a real browser
                 await context.add_init_script("""
@@ -102,10 +106,13 @@ class NewspaperScraper:
                         get: () => false
                     });
                 """)
+                logger.info("Added script to hide webdriver property")
 
                 # Create a new page and navigate to URL
                 page = await context.new_page()
+                logger.info(f"New page created, navigating to {url}")
                 response = await page.goto(url, wait_until="networkidle", timeout=30000)
+                logger.info(f"Page navigation completed with status {response.status}")
 
                 # Check if we hit a rate limit or other error
                 if response.status >= 400:
@@ -119,22 +126,27 @@ class NewspaperScraper:
                 # Add random scrolling behavior like a human
                 page_height = await page.evaluate('document.body.scrollHeight')
                 view_port_height = self.current_fingerprint['viewport']['height']
+                logger.info(f"Page height: {page_height}, Viewport height: {view_port_height}")
 
                 # Scroll down in steps
                 for i in range(0, page_height, view_port_height // 2):
                     await page.evaluate(f'window.scrollTo(0, {i})')
+                    logger.info(f"Scrolled to position {i}")
                     # Random pause between scrolls like a human would
                     await asyncio.sleep(random.uniform(0.1, 0.5))
 
                 # Wait for the page to load completely
                 await page.wait_for_load_state("networkidle")
+                logger.info("Page load state: networkidle")
 
                 # Get page content and parse with BeautifulSoup
                 html = await page.content()
                 soup = BeautifulSoup(html, 'html.parser')
+                logger.info("Page content fetched and parsed with BeautifulSoup")
 
                 # Close the context to free resources
                 await context.close()
+                logger.info("Browser context closed")
 
                 return soup
 

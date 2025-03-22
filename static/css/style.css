@@ -1,0 +1,21 @@
+.log-container {
+    height: 300px;
+    overflow-y: auto;
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 5px;
+    font-family: monospace;
+}
+
+.log-entry {
+    margin: 0;
+    padding: 2px 0;
+}
+
+.progress {
+    height: 20px;
+}
+
+.progress-bar {
+    transition: width 0.3s ease-in-out;
+}

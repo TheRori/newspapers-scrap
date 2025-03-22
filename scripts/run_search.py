@@ -1,8 +1,17 @@
+import logging_config
+import logging
+import sys
+logger = logging.getLogger(__name__)
+# Ajouter un handler stdout s'il n'y en a pas
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 import argparse
 import os
-import sys
 import time
-import logging
 import asyncio
 
 from newspapers_scrap import scraper
@@ -10,12 +19,8 @@ from newspapers_scrap.scraper import NewspaperScraper
 from newspapers_scrap.config.config import env
 from newspapers_scrap.security import ProxyManager
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    handlers=[logging.StreamHandler(sys.stdout)],
-                    force=True)
-logger = logging.getLogger(__name__)
+
+
 
 async def async_main():
     # Parse command-line arguments
@@ -30,6 +35,8 @@ async def async_main():
     parser.add_argument('--yeq', type=str, help='Filter by specific year (e.g., 1972, 2002)')
 
     args = parser.parse_args()
+
+    logger.debug('Searching for newspaper articles')
 
     proxy_manager = None
     if args.proxies:
