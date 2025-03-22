@@ -1,0 +1,263 @@
+<!-- templates/browse.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browse Articles by Topic</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .filter-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            border: 1px solid #e9ecef;
+        }
+
+        .filter-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: flex-end;
+        }
+
+        .filter-group {
+            margin-right: 15px;
+        }
+
+        .filter-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .filter-group input {
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+
+        .filter-actions {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+        }
+
+        .filter-btn {
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .clear-btn {
+            padding: 8px 15px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .active-filters {
+            margin: 15px 0;
+            padding: 10px 15px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+
+        .filter-tag {
+            display: inline-block;
+            margin-left: 10px;
+            padding: 3px 10px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 20px;
+            font-size: 0.85em;
+        }
+
+        .topic-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .topic-title {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .file-list {
+            list-style-type: none;
+            padding-left: 10px;
+        }
+
+        .file-item {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #ffffff;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+        }
+
+        .file-header {
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .file-header a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        .file-header a:hover {
+            text-decoration: underline;
+        }
+
+        .file-metadata {
+            font-size: 0.85em;
+            color: #6c757d;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .metadata-item {
+            margin-right: 10px;
+        }
+
+        .empty-topic {
+            color: #6c757d;
+            font-style: italic;
+        }
+
+        .error-message {
+            padding: 15px;
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 20px;
+            background-color: #343a40;
+            margin-bottom: 20px;
+        }
+
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+<div class="navbar">
+    <a href="/">Home</a>
+    <a href="/browse">Browse Topics</a>
+</div>
+
+<div class="container">
+    <h1>Browse Articles by Topic</h1>
+    <div class="filter-section">
+        <form action="{{ url_for('browse_topics') }}" method="get" class="filter-form">
+            <div class="filter-group">
+                <label for="filter_word">Search in articles:</label>
+                <input type="text" id="filter_word" name="filter_word" value="{{ filter_word }}"
+                       placeholder="Enter keyword">
+            </div>
+            <div class="filter-group">
+                <label for="date_from">Date range:</label>
+                <input type="date" id="date_from" name="date_from" value="{{ date_from }}">
+                <span>to</span>
+                <input type="date" id="date_to" name="date_to" value="{{ date_to }}">
+            </div>
+            <div class="filter-group">
+                <label for="min_words">Word count range:</label>
+                <input type="number" id="min_words" name="min_words" value="{{ min_words }}" placeholder="Min"
+                       min="0">
+                <span>to</span>
+                <input type="number" id="max_words" name="max_words" value="{{ max_words }}" placeholder="Max"
+                       min="0">
+            </div>
+            <div class="filter-actions">
+                <button type="submit" class="filter-btn">Apply Filters</button>
+                <a href="{{ url_for('browse_topics') }}" class="clear-btn">Clear All</a>
+            </div>
+        </form>
+    </div>
+    {% if filter_word or date_from or date_to or min_words or max_words %}
+    <div class="active-filters">
+        <strong>Active Filters:</strong>
+        {% if filter_word %}
+        <span class="filter-tag">Keyword: {{ filter_word }}</span>
+        {% endif %}
+        {% if date_from %}
+        <span class="filter-tag">From: {{ date_from }}</span>
+        {% endif %}
+        {% if date_to %}
+        <span class="filter-tag">To: {{ date_to }}</span>
+        {% endif %}
+        {% if min_words %}
+        <span class="filter-tag">Min words: {{ min_words }}</span>
+        {% endif %}
+        {% if max_words %}
+        <span class="filter-tag">Max words: {{ max_words }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="error-message">
+        {{ error }}
+    </div>
+    {% endif %}
+    {% if topics|length == 0 %}
+    <p>No topics found. Start searching to create article collections.</p>
+    {% else %}
+    {% for topic in topics %}
+    <div class="topic-section">
+        <h2 class="topic-title">{{ topic.name }}</h2>
+        {% if topic.files|length == 0 %}
+        <p class="empty-topic">No articles in this topic</p>
+        {% else %}
+        <ul class="file-list">
+            {% for file in topic.files %}
+            <li class="file-item">
+                <div class="file-header">
+                    <a href="{{ url_for('view_file', topic=topic.name, filename=file.filename) }}">
+                        {{ file.title }}
+                    </a>
+                </div>
+                <div class="file-metadata">
+                    {% if file.date != 'Unknown date' %}
+                    <span class="metadata-item">Date: {{ file.date }}</span>
+                    {% endif %}
+                    {% if file.newspaper != 'Unknown source' %}
+                    <span class="metadata-item">Source: {{ file.newspaper }}</span>
+                    {% endif %}
+                    {% if file.canton %}
+                    <span class="metadata-item">Canton: {{ file.canton }}</span>
+                    {% endif %}
+                    <span class="metadata-item">Words: {{ file.word_count }}</span>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+</body>
+</html>

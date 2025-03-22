@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Article Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .file-header {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .file-header h1 {
+            margin-bottom: 15px;
+            color: #343a40;
+        }
+        .file-metadata {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            color: #6c757d;
+        }
+        .metadata-item {
+            margin-right: 15px;
+        }
+        .article-content {
+            line-height: 1.6;
+            color: #212529;
+        }
+        .article-content p {
+            margin-bottom: 1em;
+        }
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 20px;
+            background-color: #343a40;
+            margin-bottom: 20px;
+        }
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            padding: 5px 10px;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #007bff;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="/">Home</a>
+        <a href="/browse">Browse Topics</a>
+    </div>
+
+    <div class="container">
+        {% if error %}
+        <div class="error-message">
+            {{ error }}
+        </div>
+        {% else %}
+        <a href="{{ url_for('browse_topics') }}" class="back-link">← Back to Topics</a>
+
+        <div class="file-header">
+            <h1>{{ title }}</h1>
+            <div class="file-metadata">
+                <div class="metadata-item">Topic: {{ topic }}</div>
+                {% if date %}
+                <div class="metadata-item">Date: {{ date }}</div>
+                {% endif %}
+                {% if newspaper %}
+                <div class="metadata-item">Source: {{ newspaper }}</div>
+                {% endif %}
+                {% if canton %}
+                <div class="metadata-item">Canton: {{ canton }}</div>
+                {% endif %}
+                {% if word_count %}
+                <div class="metadata-item">Word count: {{ word_count }}</div>
+                {% endif %}
+                {% if url %}
+                <div class="metadata-item">
+                    <a href="{{ url }}" target="_blank">Original article</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="article-content">
+            {% if content %}
+                {% for paragraph in content.split('\n') %}
+                    {% if paragraph.strip() %}
+                        <p>{{ paragraph }}</p>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <p>No content available for this article.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>

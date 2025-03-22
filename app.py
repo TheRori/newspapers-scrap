@@ -1,4 +1,6 @@
 # app.py
+from pathlib import Path
+
 import logging_config
 import json
 import os
@@ -12,8 +14,6 @@ from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO
 from queue import Queue, Empty
 from threading import Thread
-
-
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +43,10 @@ def stream_process(process, queue):
                 try:
                     with open(json_path, 'r', encoding='utf-8') as f:
                         article_data = json.load(f)
-                        queue.put(f"Article: {article_data['title']}")
-                        queue.put(f"Source: {article_data['newspaper']} ({article_data['date']})")
-                        queue.put(f"URL: {article_data['url']}")
+                        queue.put(f"Article: {article_data.get('title', 'No title')}")
+                        queue.put(
+                            f"Source: {article_data.get('newspaper', 'Unknown')} ({article_data.get('date', 'Unknown')})")
+                        queue.put(f"URL: {article_data.get('url', 'No URL')}")
                         queue.put("---")
                 except Exception as e:
                     queue.put(f"Error reading article data: {str(e)}")
@@ -71,6 +72,153 @@ def stream_process(process, queue):
         process.stdout.close()
         queue.put("Search process completed")
 
+
+import os
+from flask import send_from_directory, abort
+
+
+# Add this route to browse topics and files
+@app.route('/browse')
+def browse_topics():
+    """Display the topics directory structure with rich metadata and filtering"""
+    topics_dir = Path('data') / 'by_topic'
+
+    # Get filter parameters
+    filter_word = request.args.get('filter_word', '').strip().lower()
+    filter_date_from = request.args.get('date_from', '')
+    filter_date_to = request.args.get('date_to', '')
+
+    # Get word count filter parameters
+    min_words = request.args.get('min_words', '')
+    max_words = request.args.get('max_words', '')
+
+    # Convert to integers if present
+    min_words = int(min_words) if min_words and min_words.isdigit() else None
+    max_words = int(max_words) if max_words and max_words.isdigit() else None
+
+    if not os.path.exists(topics_dir):
+        return render_template('browse.html', error=f'Topics directory {topics_dir} not found', topics=[])
+
+    topics = []
+    for topic in sorted(os.listdir(topics_dir)):
+        topic_path = os.path.join(topics_dir, topic)
+        if os.path.isdir(topic_path):
+            topic_info = {
+                'name': topic,
+                'files': []
+            }
+
+            for file in sorted(os.listdir(topic_path)):
+                if file.endswith('.json'):
+                    file_path = os.path.join(topic_path, file)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            file_data = json.load(f)
+
+                            # Check if file matches the filter criteria
+                            include_file = True
+
+                            # Word filter (in title or content)
+                            if filter_word:
+                                title = file_data.get('title', '').lower()
+                                content = file_data.get('content', '').lower()
+                                if filter_word not in title and filter_word not in content:
+                                    include_file = False
+
+                            # Date range filter
+                            if include_file and (filter_date_from or filter_date_to):
+                                file_date = file_data.get('date', '')
+                                if filter_date_from and file_date < filter_date_from:
+                                    include_file = False
+                                if filter_date_to and file_date > filter_date_to:
+                                    include_file = False
+
+                            # Word count filter
+                            if include_file and (min_words is not None or max_words is not None):
+                                word_count = file_data.get('word_count', 0)
+                                if min_words is not None and word_count < min_words:
+                                    include_file = False
+                                if max_words is not None and word_count > max_words:
+                                    include_file = False
+
+                            if include_file:
+                                file_info = {
+                                    'filename': file,
+                                    'title': file_data.get('title', 'No title'),
+                                    'date': file_data.get('date', 'Unknown date'),
+                                    'word_count': file_data.get('word_count', 0),
+                                    'newspaper': file_data.get('newspaper', 'Unknown source'),
+                                    'canton': file_data.get('canton', None)
+                                }
+                                topic_info['files'].append(file_info)
+                    except Exception as e:
+                        logger.error(f"Error reading file {file_path}: {str(e)}")
+                        if not filter_word and not filter_date_from and not filter_date_to and min_words is None and max_words is None:
+                            # Only add error files if no filters are active
+                            topic_info['files'].append({
+                                'filename': file,
+                                'title': 'Error reading file',
+                                'error': str(e)
+                            })
+            topics.append(topic_info)
+
+    return render_template(
+        'browse.html',
+        topics=topics,
+        filter_word=filter_word,
+        date_from=filter_date_from,
+        date_to=filter_date_to,
+        min_words=min_words or '',
+        max_words=max_words or ''
+    )
+
+@app.route('/browse/<topic>/<filename>')
+def view_file(topic, filename):
+    """View a specific JSON file with complete metadata"""
+    file_path = os.path.join('data', 'by_topic', topic, filename)
+
+    if not os.path.exists(file_path) or not file_path.endswith('.json'):
+        abort(404)
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            full_content = json.load(f)
+            # Extract metadata for template
+            metadata = {
+                'title': full_content.get('title', ''),
+                'content': full_content.get('content', ''),
+                'date': full_content.get('date', ''),
+                'newspaper': full_content.get('newspaper', ''),
+                'canton': full_content.get('canton', ''),
+                'word_count': full_content.get('word_count', ''),
+                'url': full_content.get('url', '')
+            }
+        return render_template('view_file.html', filename=filename, topic=topic, **metadata)
+    except Exception as e:
+        logger.error(f"Error reading file {file_path}: {str(e)}")
+        return render_template('view_file.html', error=str(e), filename=filename, topic=topic)
+
+
+@app.route('/api/file/<topic>/<filename>')
+def get_file_content(topic, filename):
+    """API endpoint to get file content as JSON"""
+    file_path = os.path.join('data', 'by_topic', topic, filename)
+
+    if not os.path.exists(file_path) or not file_path.endswith('.json'):
+        return jsonify({'error': 'File not found'}), 404
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            full_content = json.load(f)
+            # Extract only title and content
+            result = {
+                'title': full_content.get('title', ''),
+                'content': full_content.get('content', '')
+            }
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error reading file {file_path}: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/')
