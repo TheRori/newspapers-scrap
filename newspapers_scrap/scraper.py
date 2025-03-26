@@ -22,7 +22,7 @@ from newspapers_scrap.security import UserAgentManager, ProxyManager, BrowserFin
 class NewspaperScraper:
     """Base scraper for newspaper websites"""
 
-    def __init__(self, newspaper_key=None, config=None):
+    def __init__(self, newspaper_key=None, config=None, apply_spell_correction=False, correction_method=None, language='fr'):
         self.config = config or env
         key = newspaper_key or 'e_newspaper_archives'
         self.newspaper_config = self.config.selectors.newspapers.e_newspaper_archives
@@ -39,6 +39,9 @@ class NewspaperScraper:
         self.proxy_manager = ProxyManager()
         self.current_user_agent = None
         self.current_fingerprint = None
+        self.apply_spell_correction = apply_spell_correction
+        self.correction_method = correction_method
+        self.language = language
 
     async def _init_playwright(self):
         """Initialize Playwright with standard browser"""
@@ -245,10 +248,21 @@ class NewspaperScraper:
             return ""
         article_selectors = self.config.selectors.article_selectors
         content_selector = article_selectors.article_text
+        headers_selector = article_selectors.headers
 
-        text = self._extract_by_selector(soup, content_selector, join_texts=True)
-        if not text:
+        # Get the main content container
+        content_container = soup.select_one(content_selector)
+        if not content_container:
             logger.warning(f"Could not find article content for {url}")
+            return ""
+
+        # Remove header elements from the content
+        for header in content_container.select(headers_selector):
+            header.decompose()
+
+        # Get the cleaned text
+        text = content_container.get_text(separator='\n\n', strip=True)
+
         return text
 
     from newspapers_scrap.data_manager.organizer import organize_article
@@ -292,6 +306,7 @@ class NewspaperScraper:
                         logger.warning(f"No content found for article: {result['title']}")
                         continue
 
+                    # Pass spell correction parameters to the organize_article function
                     metadata = organize_article(
                         article_text=article_content,
                         url=result['url'],
@@ -299,7 +314,10 @@ class NewspaperScraper:
                         article_title=result['title'],
                         newspaper_name=result.get('newspaper', 'Unknown'),
                         date_str=result.get('date', ''),
-                        canton=cantons[0] if cantons else None
+                        canton=cantons[0] if cantons else None,
+                        apply_spell_correction=self.apply_spell_correction,
+                        correction_method=self.correction_method,
+                        language=self.language
                     )
 
                     all_results.append(metadata)

@@ -8,83 +8,107 @@
     <link href="../static/css/style.css" rel="stylesheet">
 </head>
 <body>
-    <div class="container mt-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>Newspaper Archive Search Tool</h1>
-            <a href="{{ url_for('browse_topics') }}" class="btn btn-outline-primary">Browse Articles by Topic</a>
-        </div>
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Newspaper Archive Search Tool</h1>
+        <a href="{{ url_for('browse_topics') }}" class="btn btn-outline-primary">Browse Articles by Topic</a>
+    </div>
 
-        <div class="card mb-4">
-            <div class="card-header">Search Parameters</div>
-            <div class="card-body">
-                <form id="searchForm">
-                    <div class="mb-3">
-                        <label for="query" class="form-label">Search Query</label>
-                        <input type="text" class="form-control" id="query" required>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="newspapers" class="form-label">Newspapers</label>
-                                <input type="text" class="form-control" id="newspapers" placeholder="LLE JDG">
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="cantons" class="form-label">Cantons</label>
-                                <input type="text" class="form-control" id="cantons" placeholder="GE FR">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label for="searches" class="form-label">Max Searches</label>
-                                <input type="number" class="form-control" id="searches" value="1" min="1">
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label for="deq" class="form-label">Decade</label>
-                                <input type="text" class="form-control" id="deq" placeholder="197">
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label for="yeq" class="form-label">Year</label>
-                                <input type="text" class="form-control" id="yeq" placeholder="1976">
-                            </div>
-                        </div>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary" id="searchBtn">Search</button>
-                </form>
-            </div>
-        </div>
-
-        <div class="card mb-4" id="progressCard">
-            <div class="card-header">Progress</div>
-            <div class="card-body">
-                <div class="progress" style="height: 25px;">
-                    <div class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
-                         id="searchProgress" role="progressbar" style="width: 0%"
-                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+    <div class="card mb-4">
+        <div class="card-header">Search Parameters</div>
+        <div class="card-body">
+            <form id="searchForm">
+                <div class="mb-3">
+                    <label for="query" class="form-label">Search Query</label>
+                    <input type="text" class="form-control" id="query" required>
                 </div>
-                <p class="text-center mt-2 mb-0" id="progressText">Processing articles: 0 / 0</p>
-            </div>
-        </div>
 
-        <div class="card">
-            <div class="card-header">Process Output</div>
-            <div class="card-body">
-                <div class="log-container" id="logContainer"></div>
-            </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="newspapers" class="form-label">Newspapers</label>
+                            <input type="text" class="form-control" id="newspapers" placeholder="LLE JDG">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="cantons" class="form-label">Cantons</label>
+                            <input type="text" class="form-control" id="cantons" placeholder="GE FR">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="searches" class="form-label">Max Searches</label>
+                            <input type="number" class="form-control" id="searches" value="1" min="1">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="deq" class="form-label">Decade</label>
+                            <input type="text" class="form-control" id="deq" placeholder="197">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="yeq" class="form-label">Year</label>
+                            <input type="text" class="form-control" id="yeq" placeholder="1976">
+                        </div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="correction_method" class="form-label">Spell Correction</label>
+                            <select class="form-control" id="correction_method">
+                                <option value="none" selected>No Correction</option>
+                                <option value="mistral">Mistral AI (Better but slower)</option>
+                                <option value="symspell">SymSpell (Faster)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="language" class="form-label">Language</label>
+                            <select class="form-control" id="language">
+                                <option value="fr" selected>French</option>
+                                <option value="de">German</option>
+                                <option value="en">English</option>
+                                <option value="it">Italian</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="searchBtn">Search</button>
+            </form>
         </div>
     </div>
 
-    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
-    <script src="../static/js/search.js"></script>
+    <div class="card mb-4" id="progressCard">
+        <div class="card-header">Progress</div>
+        <div class="card-body">
+            <div class="progress" style="height: 25px;">
+                <div class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
+                     id="searchProgress" role="progressbar" style="width: 0%"
+                     aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%
+                </div>
+            </div>
+            <p class="text-center mt-2 mb-0" id="progressText">Processing articles: 0 / 0</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Process Output</div>
+        <div class="card-body">
+            <div class="log-container" id="logContainer"></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+<script src="../static/js/search.js"></script>
 </body>
 </html>

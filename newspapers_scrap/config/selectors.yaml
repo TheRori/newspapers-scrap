@@ -9,6 +9,7 @@ SEARCH_SELECTORS:
 ARTICLE_SELECTORS:
   'title': '#sectionleveltabtitlearea h2 span'
   'article_text': '#documentdisplayleftpanesectiontextcontainer'
+  'headers': '.documentdisplayleftpanesectiontextheader'
   'permalink': '.persistentlinkurl'
   'article_container': '#documentdisplayleftpanesectionleveltabcontent'
 

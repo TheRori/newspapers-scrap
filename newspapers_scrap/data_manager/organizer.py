@@ -9,6 +9,7 @@ from newspapers_scrap.config.config import env
 
 logger = logging.getLogger(__name__)
 
+
 def organize_article(
         article_text: str,
         url: str,
@@ -17,28 +18,86 @@ def organize_article(
         newspaper_name: str,
         date_str: str,
         canton: Optional[str] = None,
-        apply_spell_correction: bool = False,
-        language: str = 'fr'  # Default to French for Swiss newspapers
+        apply_spell_correction: bool = True,
+        correction_method: str = 'mistral',
+        language: str = 'fr'
 ) -> Dict:
     """
     Organize an article into the data structure and return its metadata
+
+    Args:
+        article_text: The article text to organize
+        url: The URL where the article was found
+        search_term: The search term used to find the article
+        article_title: The title of the article
+        newspaper_name: The name of the newspaper
+        date_str: The date of the article as a string
+        canton: Optional canton information
+        apply_spell_correction: Whether to apply spell correction
+        correction_method: Which spell correction method to use ('mistral' or 'symspell')
+        language: The language of the article
     """
     import unicodedata
+    import tempfile
 
+    # Update in newspapers_scrap/data_manager/organizer.py (spell correction section)
     if apply_spell_correction:
+        logger.info(f"Applying spell correction using method: {correction_method}")
         try:
-            from newspapers_scrap.utils.spellcheck import SpellCorrector
-            spell_corrector = SpellCorrector(language=language)
-            corrected_text = spell_corrector.correct_text(article_text)
+            if correction_method.lower() == 'mistral':
+                logger.info("Using Mistral AI for spell correction")
+                from newspapers_scrap.data_manager.ocr_cleaner.mistral_checker import correct_text_ai
+                # Use temporary files for text correction
+                with tempfile.NamedTemporaryFile(mode='w+', encoding='utf-8', delete=False) as temp_in, \
+                        tempfile.NamedTemporaryFile(mode='w+', encoding='utf-8', delete=False) as temp_out:
+                    temp_in.write(article_text)
+                    temp_in_path = temp_in.name
+                    temp_out_path = temp_out.name
+                    logger.info(f"Created temporary files: in={temp_in_path}, out={temp_out_path}")
+
+                # Close both files before passing to correct_text
+                logger.info("Starting Mistral correction process")
+                success = correct_text_ai(temp_in_path, temp_out_path)
+
+                if success:
+                    # Read the corrected text
+                    with open(temp_out_path, 'r', encoding='utf-8') as f:
+                        corrected_text = f.read()
+                        logger.info(f"Retrieved corrected text ({len(corrected_text)} characters)")
+                else:
+                    logger.warning("Mistral correction process failed, using original text")
+                    corrected_text = article_text
+
+                # Clean up temporary files
+                logger.debug(f"Removing temporary files")
+                os.unlink(temp_in_path)
+                os.unlink(temp_out_path)
+
+            elif correction_method.lower() == 'symspell':
+                logger.info(f"Using SymSpell for spell correction (language: {language})")
+                from newspapers_scrap.data_manager.ocr_cleaner.symspell_checker import SpellCorrector
+                spell_corrector = SpellCorrector(language=language)
+                logger.info("SymSpell corrector initialized, starting correction")
+                corrected_text = spell_corrector.correct_text_sym(article_text)
+                logger.info(f"SymSpell correction complete ({len(corrected_text)} characters)")
+
+            else:
+                logger.warning(f"Unknown correction method: {correction_method}. Using no correction.")
+                corrected_text = article_text
+
             # Check if any corrections were made
             has_corrections = corrected_text != article_text
-            if has_corrections is False:
-                logger.info("No spelling errors found")
+            if has_corrections:
+                diff_chars = abs(len(corrected_text) - len(article_text))
+                logger.info(f"Corrections applied. Character difference: {diff_chars}")
+            else:
+                logger.info("No spelling corrections found or needed")
         except Exception as e:
-            logger.error(f"Spell correction failed: {str(e)}")
+            logger.error(f"Spell correction failed: {str(e)}", exc_info=True)
             corrected_text = article_text
             has_corrections = False
     else:
+        logger.info("Spell correction skipped (disabled)")
         corrected_text = article_text
         has_corrections = False
 

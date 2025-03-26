@@ -4,7 +4,7 @@ const progressCard = document.getElementById('progressCard');
 const progressBar = document.getElementById('searchProgress');
 const progressText = document.getElementById('progressText');
 
-socket.on('log_message', function(data) {
+socket.on('log_message', function (data) {
     const logEntry = document.createElement('p');
     logEntry.className = 'log-entry';
     logEntry.textContent = data.message;
@@ -12,14 +12,14 @@ socket.on('log_message', function(data) {
     logContainer.scrollTop = logContainer.scrollHeight;
 });
 
-socket.on('total_articles', function(data) {
+socket.on('total_articles', function (data) {
     progressCard.style.display = 'block';
     progressBar.style.width = '0%';
     progressBar.textContent = '0%';
     progressText.textContent = `Processing articles: 0 / ${data.total}`;
 });
 
-socket.on('progress', function(data) {
+socket.on('progress', function (data) {
     progressCard.style.display = 'block';
     progressBar.style.width = `${data.value}%`;
     progressBar.textContent = `${data.value}%`;
@@ -27,14 +27,14 @@ socket.on('progress', function(data) {
     progressText.textContent = `Processing articles: ${data.saved} / ${data.total}`;
 });
 
-socket.on('search_complete', function(data) {
+socket.on('search_complete', function (data) {
     const searchBtn = document.getElementById('searchBtn');
     searchBtn.disabled = false;
     searchBtn.textContent = 'Search';
     progressBar.classList.remove('progress-bar-animated');
 });
 
-document.getElementById('searchForm').addEventListener('submit', function(e) {
+document.getElementById('searchForm').addEventListener('submit', function (e) {
     e.preventDefault();
     console.log("Search form submitted");
     logContainer.innerHTML = '';
@@ -53,9 +53,11 @@ document.getElementById('searchForm').addEventListener('submit', function(e) {
         query: document.getElementById('query').value,
         newspapers: document.getElementById('newspapers').value,
         cantons: document.getElementById('cantons').value,
-        searches : document.getElementById('searches').value,
+        searches: document.getElementById('searches').value,
         deq: document.getElementById('deq').value,
-        yeq: document.getElementById('yeq').value
+        yeq: document.getElementById('yeq').value,
+        correction_method: document.getElementById('correction_method').value,
+        language: document.getElementById('language').value
     };
 
     fetch('/api/search', {
@@ -65,11 +67,11 @@ document.getElementById('searchForm').addEventListener('submit', function(e) {
         },
         body: JSON.stringify(formData)
     })
-    .catch(error => {
-        console.error('Error:', error);
-        logContainer.innerHTML += '<p class="log-entry text-danger">Error: ' + error + '</p>';
-        searchBtn.disabled = false;
-        searchBtn.textContent = 'Search';
-        progressCard.style.display = 'none';
-    });
+        .catch(error => {
+            console.error('Error:', error);
+            logContainer.innerHTML += '<p class="log-entry text-danger">Error: ' + error + '</p>';
+            searchBtn.disabled = false;
+            searchBtn.textContent = 'Search';
+            progressCard.style.display = 'none';
+        });
 });

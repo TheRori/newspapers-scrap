@@ -33,6 +33,13 @@ async def async_main():
     parser.add_argument('--cantons', type=str, nargs='+', help='Canton codes to search (e.g., GE for Geneva)')
     parser.add_argument('--deq', type=str, help='Filter by decade (e.g., 197 for 1970-1979, 200 for 2000-2009)')
     parser.add_argument('--yeq', type=str, help='Filter by specific year (e.g., 1972, 2002)')
+    parser.add_argument('--correction', type=str, choices=['mistral', 'symspell'],
+                        help='Spell correction method to use (mistral or symspell)')
+    parser.add_argument('--language', type=str, default='fr',
+                        choices=['fr', 'de', 'en', 'it'],
+                        help='Language for spell correction')
+    parser.add_argument('--no-correction', action='store_true',
+                        help='Disable spell correction')
 
     args = parser.parse_args()
 
@@ -53,7 +60,13 @@ async def async_main():
     start_time = time.time()
 
     # Create scraper instance with the new config
-    scraper = NewspaperScraper(config=env)
+    correction_settings = {
+        'apply_spell_correction': not args.no_correction,
+        'correction_method': args.correction if args.correction else None,
+        'language': args.language
+    }
+
+    scraper = NewspaperScraper(config=env, **correction_settings)
 
     # Search for articles and save them
     results = await scraper.save_articles_from_search(

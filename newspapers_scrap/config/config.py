@@ -1,3 +1,5 @@
+import os
+
 import yaml
 import re
 from typing import Dict, Any, Union
@@ -42,6 +44,7 @@ class NewspaperDict(BaseModel):
 class ArticleSelectors(BaseModel):
     title: str
     article_text: str
+    headers: str
     permalink: str
     article_container: str
 
@@ -102,12 +105,87 @@ class BrightDataConfig(BaseModel):
     password: str
     zone: str
 
+class MistralConfig(BaseModel):
+    MISTRAL_API_KEY: str
+    MODEL_NAME: str
+
+
 
 class Config(BaseModel):
     urls: UrlsConfig
     selectors: Selectors
     scraping: Scraping
     storage: Storage
+    mistral: MistralConfig
+
+
+def load_secrets(config_str):
+    """
+    Load secrets from secrets.yaml and replace placeholders in config strings.
+
+    Args:
+        config_str (str): Configuration string that may contain placeholders like {{SECRET:KEY_NAME}}
+
+    Returns:
+        str: Configuration with secrets substituted
+    """
+    # Find the project root (where the config directory is)
+    project_root = Path(__file__).parent
+    secrets_path = project_root / "secrets.yaml"
+
+    # Check if secrets file exists
+    if not secrets_path.exists():
+        raise FileNotFoundError(f"Secrets file not found at {secrets_path}")
+
+    # Load secrets from the file
+    with open(secrets_path, 'r') as f:
+        secrets = yaml.safe_load(f)
+
+    # Check if secrets is a dictionary
+    if not isinstance(secrets, dict):
+        raise ValueError("Secrets file does not contain a valid dictionary")
+
+    # Replace any {{SECRET:KEY_NAME}} patterns in the config string
+    import re
+    pattern = r'{{SECRET:([A-Za-z0-9_]+)}}'
+
+    def replace_secret(match):
+        key = match.group(1)
+        if key in secrets:
+            return secrets[key]
+        else:
+            # Try environment variable as fallback
+            env_value = os.getenv(key)
+            if env_value:
+                return env_value
+            raise KeyError(f"Secret key '{key}' not found in secrets.yaml or environment variables")
+
+    return re.sub(pattern, replace_secret, config_str)
+
+
+def load_config_with_secrets(config_path):
+    """
+    Load a YAML config file and replace any secret placeholders.
+
+    Args:
+        config_path (str or Path): Path to the config file
+
+    Returns:
+        dict: Configuration with secrets loaded
+    """
+    config_path = Path(config_path)
+
+    # Read the config file as a string
+    with open(config_path, 'r') as f:
+        config_str = f.read()
+
+    # Replace secrets in the string
+    config_str = load_secrets(config_str)
+
+    # Parse the resulting YAML
+    config = yaml.safe_load(config_str)
+
+    return config
 
 
 def load_yaml(file_path: Path) -> dict:
@@ -160,6 +238,7 @@ def load_config() -> Config:
         "selectors": load_yaml(base_path / "selectors.yaml"),
         "scraping": load_yaml(base_path / "scraping.yaml"),
         "storage": load_yaml(base_path / "storage.yaml"),
+        "mistral": load_config_with_secrets(base_path / "mistral.yaml"),
     }
 
     # Resolve placeholders
@@ -171,6 +250,7 @@ def load_config() -> Config:
         selectors=resolved_configs["selectors"],
         scraping=resolved_configs["scraping"],
         storage=resolved_configs["storage"],
+        mistral=resolved_configs["mistral"],
     )
 
 

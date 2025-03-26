@@ -1,0 +1,3 @@
+# config/mistral.yaml
+MISTRAL_API_KEY: "{{SECRET:MISTRAL_API_KEY}}"
+MODEL_NAME: "mistral-small"

@@ -1,4 +1,4 @@
-# newspapers_scrap/utils/spellcheck.py
+# newspapers_scrap/utils/symspell_checker.py
 import os
 import logging
 from pathlib import Path
@@ -31,7 +31,7 @@ class SpellCorrector:
             logger.error(f"Error loading dictionary: {str(e)}")
             raise
 
-    def correct_text(self, text):
+    def correct_text_sym(self, text):
         """Correct spelling errors in the given text."""
         if not text:
             return text

@@ -247,6 +247,7 @@ def index():
 
 
 @app.route('/api/search', methods=['POST'])
+@app.route('/api/search', methods=['POST'])
 def search():
     data = request.json
 
@@ -265,6 +266,16 @@ def search():
         cmd.extend(['--deq', data['deq']])
     if data.get('yeq'):
         cmd.extend(['--yeq', data['yeq']])
+
+    # Add spell correction parameters
+    correction_method = data.get('correction_method', 'none')
+    if correction_method and correction_method != 'none':
+        cmd.extend(['--correction', correction_method])
+        # Add language parameter if spell correction is enabled
+        language = data.get('language', 'fr')
+        cmd.extend(['--language', language])
+    else:
+        cmd.extend(['--no-correction'])  # Explicitly disable correction
 
     logger.info(f"Running command: {' '.join(cmd)}")
 

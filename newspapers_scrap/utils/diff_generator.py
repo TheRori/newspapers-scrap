@@ -1,11 +1,13 @@
 # newspapers_scrap/utils/diff_generator.py
 import difflib
 import html
+import re
+
 
 def generate_html_diff(original_text, corrected_text):
     """
     Generate HTML that highlights the differences between original and corrected text
-    with proper handling of UTF-8 characters.
+    with proper handling of UTF-8 characters and line breaks.
     """
     if original_text is None or corrected_text is None:
         return "<p>No differences to display (missing original or corrected text)</p>"
@@ -16,46 +18,41 @@ def generate_html_diff(original_text, corrected_text):
     if isinstance(corrected_text, bytes):
         corrected_text = corrected_text.decode('utf-8')
 
-    # Process text by paragraphs to maintain structure
-    original_paragraphs = original_text.split('\n')
-    corrected_paragraphs = corrected_text.split('\n')
+    # Normalize whitespace to reduce false positives
+    def normalize_text(text):
+        # Replace multiple spaces with a single space
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
 
-    result_html = []
+    # Process the entire text as tokens rather than splitting by paragraphs
+    original_tokens = normalize_text(original_text).split()
+    corrected_tokens = normalize_text(corrected_text).split()
 
-    # For each paragraph, generate a diff
-    for i in range(max(len(original_paragraphs), len(corrected_paragraphs))):
-        original_para = original_paragraphs[i] if i < len(original_paragraphs) else ""
-        corrected_para = corrected_paragraphs[i] if i < len(corrected_paragraphs) else ""
+    # Use SequenceMatcher for better diff generation
+    matcher = difflib.SequenceMatcher(None, original_tokens, corrected_tokens)
 
-        # Skip if paragraphs are identical
-        if original_para == corrected_para:
-            if original_para.strip():
-                result_html.append(f"<p>{html.escape(original_para)}</p>")
-            continue
+    result_html = ['<p>']
 
-        # Split paragraphs into words for comparison
-        original_words = original_para.split()
-        corrected_words = corrected_para.split()
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == 'equal':
+            # Unchanged text
+            for word in original_tokens[i1:i2]:
+                result_html.append(f'<span class="unchanged">{html.escape(word)}</span>')
+        elif tag == 'replace':
+            # Changed text
+            for word in original_tokens[i1:i2]:
+                result_html.append(f'<span class="removed">{html.escape(word)}</span>')
+            for word in corrected_tokens[j1:j2]:
+                result_html.append(f'<span class="added">{html.escape(word)}</span>')
+        elif tag == 'delete':
+            # Deleted text
+            for word in original_tokens[i1:i2]:
+                result_html.append(f'<span class="removed">{html.escape(word)}</span>')
+        elif tag == 'insert':
+            # Added text
+            for word in corrected_tokens[j1:j2]:
+                result_html.append(f'<span class="added">{html.escape(word)}</span>')
 
-        # Generate diff for this paragraph
-        diff = difflib.ndiff(original_words, corrected_words)
+    result_html.append('</p>')
 
-        # Convert diff to HTML
-        html_parts = []
-        for line in diff:
-            if line.startswith('+ '):
-                # Added words in green
-                word = html.escape(line[2:])
-                html_parts.append(f'<span class="added">{word}</span>')
-            elif line.startswith('- '):
-                # Removed words in red
-                word = html.escape(line[2:])
-                html_parts.append(f'<span class="removed">{word}</span>')
-            elif line.startswith('  '):
-                # Unchanged words
-                word = html.escape(line[2:])
-                html_parts.append(f'<span class="unchanged">{word}</span>')
-
-        result_html.append(f"<p>{' '.join(html_parts)}</p>")
-
-    return "\n".join(result_html)
+    return ' '.join(result_html)
