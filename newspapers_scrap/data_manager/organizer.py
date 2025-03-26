@@ -9,7 +9,6 @@ from newspapers_scrap.config.config import env
 
 logger = logging.getLogger(__name__)
 
-
 def organize_article(
         article_text: str,
         url: str,
@@ -39,8 +38,9 @@ def organize_article(
     """
     import unicodedata
     import tempfile
+    import glob
 
-    # Update in newspapers_scrap/data_manager/organizer.py (spell correction section)
+    # Apply spell correction if enabled
     if apply_spell_correction:
         logger.info(f"Applying spell correction using method: {correction_method}")
         try:
@@ -100,6 +100,7 @@ def organize_article(
         logger.info("Spell correction skipped (disabled)")
         corrected_text = article_text
         has_corrections = False
+        correction_method = "none"  # Explicitly mark as no correction
 
     # Parse date with multiple language support
     date_obj = None
@@ -125,7 +126,7 @@ def organize_article(
 
     if not date_obj:
         date_obj = datetime.now()
-        print(f"Warning: Could not parse date '{date_str}', using current date")
+        logger.warning(f"Could not parse date '{date_str}', using current date")
 
     def normalize_filename(text):
         text = unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('ASCII')
@@ -134,50 +135,94 @@ def organize_article(
         return text.lower()
 
     newspaper_id = normalize_filename(newspaper_name)
-    article_id = f"article_{date_obj.strftime('%Y%m%d')}_{newspaper_id}"
+    base_article_id = f"article_{date_obj.strftime('%Y%m%d')}_{newspaper_id}"
+
+    # Add versioning: base ID + correction method + language if not "none"
+    version_suffix = f"_{correction_method}"
+    if correction_method != "none" and language != "fr":
+        version_suffix += f"_{language}"
+
+    article_id = f"{base_article_id}{version_suffix}"
 
     # Get data directories from config - using existing path implementation
     raw_data_dir = Path(env.storage.paths.raw_data_dir)
     processed_data_dir = Path(env.storage.paths.processed_data_dir)
     topics_data_dir = Path(env.storage.paths.topics_data_dir)
+    versions_data_dir = Path(env.storage.paths.processed_data_dir) / "versions"
 
     # Ensure directories exist
     raw_data_dir.mkdir(parents=True, exist_ok=True)
     processed_data_dir.mkdir(parents=True, exist_ok=True)
+    versions_data_dir.mkdir(parents=True, exist_ok=True)
     topic_dir = topics_data_dir / normalize_filename(search_term)
     topic_dir.mkdir(parents=True, exist_ok=True)
 
-    # Define file paths with normalized names
-    raw_path = raw_data_dir / f"{article_id}.txt"
-    processed_path = processed_data_dir / f"{article_id}.json"
+    # Define path for article versions directory
+    article_versions_dir = versions_data_dir / base_article_id
+    article_versions_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save raw content
-    with open(raw_path, "w", encoding="utf-8") as f:
-        f.write(article_text)  # Save original uncorrected text
+    # Define file paths with normalized names
+    raw_path = raw_data_dir / f"{base_article_id}.txt"
+    version_path = article_versions_dir / f"{article_id}.json"
+
+    # The main processed file will always point to the latest version
+    processed_path = processed_data_dir / f"{base_article_id}.json"
+
+    # First, save the raw content if it doesn't exist yet
+    if not raw_path.exists():
+        with open(raw_path, "w", encoding="utf-8") as f:
+            f.write(article_text)  # Save original uncorrected text
+            logger.info(f"Raw content saved to: {raw_path}")
+
+    # Check for existing versions and get their information
+    existing_versions = []
+    version_files = glob.glob(str(article_versions_dir / "*.json"))
+
+    for vf in version_files:
+        try:
+            with open(vf, "r", encoding="utf-8") as f:
+                version_data = json.load(f)
+                existing_versions.append({
+                    "id": version_data["id"],
+                    "correction_method": version_data["correction_method"],
+                    "language": version_data["language"],
+                    "path": vf
+                })
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"Error reading version file {vf}: {str(e)}")
 
     # Create processed content (with metadata)
     processed_data = {
         "id": article_id,
+        "base_id": base_article_id,
         "title": article_title,
         "newspaper": newspaper_name,
         "date": date_obj.strftime("%Y-%m-%d"),
         "topics": [search_term],
         "url": url,
         "raw_path": str(raw_path),
-        "content": corrected_text,  # Use corrected text
-        "original_content": article_text if has_corrections else None,  # Store original if different
+        "content": corrected_text,
         "spell_corrected": has_corrections,
+        "correction_method": correction_method,
+        "language": language,
         "word_count": len(corrected_text.split()),
-        "canton": canton
+        "canton": canton,
+        "created_at": datetime.now().isoformat(),
+        "versions": [v["id"] for v in existing_versions] + [article_id]
     }
 
-    # Save processed content
+    # Save this version
+    with open(version_path, "w", encoding="utf-8") as f:
+        json.dump(processed_data, ensure_ascii=False, indent=2, fp=f)
+        logger.info(f"Version saved to: {version_path}")
+
+    # Always update the main processed file to point to this latest version
     with open(processed_path, "w", encoding="utf-8") as f:
         json.dump(processed_data, ensure_ascii=False, indent=2, fp=f)
-        logger.info(f"Processed content saved to: {processed_path}")
+        logger.info(f"Main processed content updated: {processed_path}")
 
-    # Create topic reference with normalized path
-    topic_ref_path = topic_dir / f"{article_id}.json"
+    # Create topic reference with normalized path (pointing to main processed file)
+    topic_ref_path = topic_dir / f"{base_article_id}.json"
 
     try:
         if topic_ref_path.exists():
@@ -188,7 +233,7 @@ def organize_article(
             ref_data = {"reference_path": str(processed_path)}
             json.dump(ref_data, f, ensure_ascii=False, indent=2)
 
+    # Return metadata without the content for the API response
     metadata = {**processed_data}
     metadata.pop("content", None)
-    metadata.pop("original_content", None)  # Remove original content from metadata
     return metadata

@@ -6,20 +6,105 @@
     <title>{{ title }} - Article Viewer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
+
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
         .container {
             max-width: 800px;
-            margin: 0 auto;
+            margin-left: 250px; /* Make room for the sidebar */
             padding: 20px;
+            position: relative;
         }
+
+        .versions-sidebar {
+            position: fixed;
+            left: 0;
+            top: 65px; /* Position below navbar */
+            width: 230px;
+            height: calc(100vh - 65px);
+            overflow-y: auto;
+            background-color: #f8f9fa;
+            border-right: 1px solid #e9ecef;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+
+        .versions-sidebar h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .versions-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .version-item {
+            padding: 8px 12px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .version-item.current {
+            background-color: #d1e7dd;
+            border-left: 3px solid #198754;
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                margin-left: auto;
+                margin-right: auto;
+            }
+
+            .versions-sidebar {
+                position: relative;
+                width: 100%;
+                height: auto;
+                top: 0;
+                margin-bottom: 20px;
+            }
+        }
+
+        .versions-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .version-item a {
+            color: #212529;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .version-meta {
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+
+        .version-date {
+            margin-left: 8px;
+        }
+
         .file-header {
             margin-bottom: 30px;
             padding-bottom: 20px;
             border-bottom: 1px solid #e9ecef;
         }
+
         .file-header h1 {
             margin-bottom: 15px;
             color: #343a40;
         }
+
         .file-metadata {
             margin-top: 10px;
             display: flex;
@@ -27,16 +112,20 @@
             gap: 15px;
             color: #6c757d;
         }
+
         .metadata-item {
             margin-right: 15px;
         }
+
         .article-content {
             line-height: 1.6;
             color: #212529;
         }
+
         .article-content p {
             margin-bottom: 1em;
         }
+
         .navbar {
             display: flex;
             justify-content: space-between;
@@ -44,34 +133,41 @@
             background-color: #343a40;
             margin-bottom: 20px;
         }
+
         .navbar a {
             color: white;
             text-decoration: none;
             padding: 5px 10px;
         }
+
         .back-link {
             display: inline-block;
             margin-bottom: 20px;
             color: #007bff;
             text-decoration: none;
         }
+
         .back-link:hover {
             text-decoration: underline;
         }
+
         /* Styles for diff view */
         .added {
             background-color: #d4ffd4;
             color: #006400;
             text-decoration: none;
         }
+
         .removed {
             background-color: #ffd4d4;
             color: #8b0000;
             text-decoration: line-through;
         }
+
         .unchanged {
             color: #212529;
         }
+
         .diff-container {
             line-height: 1.6;
             padding: 15px;
@@ -80,14 +176,17 @@
             margin-bottom: 20px;
             background-color: #f8f9fa;
         }
+
         .tab-container {
             margin-top: 20px;
         }
+
         .tab-buttons {
             display: flex;
             border-bottom: 1px solid #dee2e6;
             margin-bottom: 15px;
         }
+
         .tab-button {
             background: none;
             border: none;
@@ -97,174 +196,202 @@
             margin-right: 10px;
             font-weight: 500;
         }
+
         .tab-button.active {
             border-bottom: 2px solid #007bff;
             color: #007bff;
         }
+
         .tab-content {
             display: none;
         }
+
         .tab-content.active {
             display: block;
         }
+
         .legend {
             display: flex;
             gap: 15px;
             margin-top: 15px;
             font-size: 0.9em;
         }
+
         .legend-item {
             display: flex;
             align-items: center;
         }
+
         .legend-color {
             width: 15px;
             height: 15px;
             display: inline-block;
             margin-right: 5px;
         }
+
         .legend-color.added-color {
             background-color: #d4ffd4;
         }
+
         .legend-color.removed-color {
             background-color: #ffd4d4;
         }
     </style>
 </head>
 <body>
-    <div class="navbar">
-        <a href="/">Home</a>
-        <a href="/browse">Browse Topics</a>
+<div class="navbar">
+    <a href="/">Home</a>
+    <a href="/browse">Browse Topics</a>
+</div>
+
+<div class="container">
+    {% if error %}
+    <div class="error-message">
+        {{ error }}
     </div>
+    {% else %}
+    <a href="{{ url_for('browse_topics') }}" class="back-link">← Back to Topics</a>
 
-    <div class="container">
-        {% if error %}
-        <div class="error-message">
-            {{ error }}
-        </div>
-        {% else %}
-        <a href="{{ url_for('browse_topics') }}" class="back-link">← Back to Topics</a>
-
-        <div class="file-header">
-            <h1>{{ title }}</h1>
-            <div class="file-metadata">
-                <div class="metadata-item">Topic: {{ topic }}</div>
-                {% if date %}
-                <div class="metadata-item">Date: {{ date }}</div>
-                {% endif %}
-                {% if newspaper %}
-                <div class="metadata-item">Source: {{ newspaper }}</div>
-                {% endif %}
-                {% if canton %}
-                <div class="metadata-item">Canton: {{ canton }}</div>
-                {% endif %}
-                {% if word_count %}
-                <div class="metadata-item">Word count: {{ word_count }}</div>
-                {% endif %}
-                {% if url %}
-                <div class="metadata-item">
-                    <a href="{{ url }}" target="_blank">Original article</a>
-                </div>
-                {% endif %}
-                {% if spell_corrected %}
-                <div class="metadata-item" style="color: #28a745;">
-                    <strong>Spell Corrected</strong>
-                </div>
-                {% endif %}
+    <div class="file-header">
+        <h1>{{ title }}</h1>
+        <div class="file-metadata">
+            <div class="metadata-item">Topic: {{ topic }}</div>
+            {% if date %}
+            <div class="metadata-item">Date: {{ date }}</div>
+            {% endif %}
+            {% if newspaper %}
+            <div class="metadata-item">Source: {{ newspaper }}</div>
+            {% endif %}
+            {% if canton %}
+            <div class="metadata-item">Canton: {{ canton }}</div>
+            {% endif %}
+            {% if word_count %}
+            <div class="metadata-item">Word count: {{ word_count }}</div>
+            {% endif %}
+            {% if url %}
+            <div class="metadata-item">
+                <a href="{{ url }}" target="_blank">Original article</a>
             </div>
-        </div>
-
-        {% if show_diff %}
-        <div class="tab-container">
-            <div class="tab-buttons">
-                <button class="tab-button active" onclick="showTab('content-tab')">Article Content</button>
-                <button class="tab-button" onclick="showTab('diff-tab')">Spelling Corrections</button>
-                <button class="tab-button" onclick="showTab('original-tab')">Original Text</button>
+            {% endif %}
+            {% if spell_corrected %}
+            <div class="metadata-item" style="color: #28a745;">
+                <strong>Spell Corrected</strong>
             </div>
-
-            <div id="content-tab" class="tab-content active">
-                <div class="article-content">
-                    {% if content %}
-                        {% for paragraph in content.split('\n') %}
-                            {% if paragraph.strip() %}
-                                <p>{{ paragraph }}</p>
-                            {% endif %}
-                        {% endfor %}
-                    {% else %}
-                        <p>No content available for this article.</p>
-                    {% endif %}
-                </div>
-            </div>
-
-            <div id="diff-tab" class="tab-content">
-                <h3>Spelling Corrections</h3>
-                <div class="diff-container">
-                    {{ diff_html|safe }}
-                </div>
-                <div class="legend">
-                    <div class="legend-item">
-                        <span class="legend-color removed-color"></span>
-                        <span>Removed (Original)</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color added-color"></span>
-                        <span>Added (Corrected)</span>
-                    </div>
-                </div>
-            </div>
-
-            <div id="original-tab" class="tab-content">
-                <h3>Original Text (Before Correction)</h3>
-                <div class="article-content">
-                    {% if original_content %}
-                        {% for paragraph in original_content.split('\n') %}
-                            {% if paragraph.strip() %}
-                                <p>{{ paragraph }}</p>
-                            {% endif %}
-                        {% endfor %}
-                    {% else %}
-                        <p>Original content not available.</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        {% else %}
-        <div class="article-content">
-            {% if content %}
-                {% for paragraph in content.split('\n') %}
-                    {% if paragraph.strip() %}
-                        <p>{{ paragraph }}</p>
-                    {% endif %}
-                {% endfor %}
-            {% else %}
-                <p>No content available for this article.</p>
             {% endif %}
         </div>
+    </div>
+    {% if versions and versions|length > 1 %}
+    <div class="versions-sidebar">
+        <h3>Versions</h3>
+        <div class="versions-list">
+            {% for version in versions %}
+            <div class="version-item {% if version.id == current_version_id %}current{% endif %}">
+                <a href="{{ url_for('view_version', version_id=version.id) }}">
+                    {{ version.correction_method }}{% if version.language != 'fr' %} ({{ version.language }}){%
+                    endif %}
+                </a>
+                <div class="version-meta">
+                    Words: {{ version.word_count }}
+                    {% if version.created_at %}
+                    <span class="version-date">{{ version.created_at[:16].replace('T', ' ') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% if show_diff %}
+    <div class="tab-container">
+        <div class="tab-buttons">
+            <button class="tab-button active" onclick="showTab('content-tab')">Article Content</button>
+            <button class="tab-button" onclick="showTab('diff-tab')">Spelling Corrections</button>
+            <button class="tab-button" onclick="showTab('original-tab')">Original Text</button>
+        </div>
+
+        <div id="content-tab" class="tab-content active">
+            <div class="article-content">
+                {% if content %}
+                {% for paragraph in content.split('\n') %}
+                {% if paragraph.strip() %}
+                <p>{{ paragraph }}</p>
+                {% endif %}
+                {% endfor %}
+                {% else %}
+                <p>No content available for this article.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div id="diff-tab" class="tab-content">
+            <h3>Spelling Corrections</h3>
+            <div class="diff-container">
+                {{ diff_html|safe }}
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <span class="legend-color removed-color"></span>
+                    <span>Removed (Original)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color added-color"></span>
+                    <span>Added (Corrected)</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="original-tab" class="tab-content">
+            <h3>Original Text (Before Correction)</h3>
+            <div class="article-content">
+                {% if original_content %}
+                {% for paragraph in original_content.split('\n') %}
+                {% if paragraph.strip() %}
+                <p>{{ paragraph }}</p>
+                {% endif %}
+                {% endfor %}
+                {% else %}
+                <p>Original content not available.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="article-content">
+        {% if content %}
+        {% for paragraph in content.split('\n') %}
+        {% if paragraph.strip() %}
+        <p>{{ paragraph }}</p>
         {% endif %}
+        {% endfor %}
+        {% else %}
+        <p>No content available for this article.</p>
         {% endif %}
     </div>
+    {% endif %}
+    {% endif %}
+</div>
 
-    <script>
-        function showTab(tabId) {
-            // Hide all tab contents
-            const tabContents = document.getElementsByClassName('tab-content');
-            for (let i = 0; i < tabContents.length; i++) {
-                tabContents[i].classList.remove('active');
-            }
-
-            // Remove active class from all tab buttons
-            const tabButtons = document.getElementsByClassName('tab-button');
-            for (let i = 0; i < tabButtons.length; i++) {
-                tabButtons[i].classList.remove('active');
-            }
-
-            // Show the selected tab content and set the button as active
-            document.getElementById(tabId).classList.add('active');
-            const buttons = document.querySelectorAll(`button[onclick="showTab('${tabId}')"]`);
-            if (buttons.length > 0) {
-                buttons[0].classList.add('active');
-            }
+<script>
+    function showTab(tabId) {
+        // Hide all tab contents
+        const tabContents = document.getElementsByClassName('tab-content');
+        for (let i = 0; i < tabContents.length; i++) {
+            tabContents[i].classList.remove('active');
         }
-    </script>
+
+        // Remove active class from all tab buttons
+        const tabButtons = document.getElementsByClassName('tab-button');
+        for (let i = 0; i < tabButtons.length; i++) {
+            tabButtons[i].classList.remove('active');
+        }
+
+        // Show the selected tab content and set the button as active
+        document.getElementById(tabId).classList.add('active');
+        const buttons = document.querySelectorAll(`button[onclick="showTab('${tabId}')"]`);
+        if (buttons.length > 0) {
+            buttons[0].classList.add('active');
+        }
+    }
+</script>
 </body>
 </html>

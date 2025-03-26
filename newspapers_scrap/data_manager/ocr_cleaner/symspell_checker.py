@@ -17,7 +17,7 @@ class SpellCorrector:
         if dictionary_path:
             dictionary_path = str(dictionary_path)
         else:
-            dictionary_path = str(env.storage.paths.models_dir + f'/{language}.txt')
+            dictionary_path = str(env.storage.paths.models_dir + f'/{language}_commons.txt')
 
         logger.info(f"Loading dictionary from {dictionary_path}")
 

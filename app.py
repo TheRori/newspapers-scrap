@@ -174,7 +174,7 @@ def browse_topics():
 
 @app.route('/browse/<topic>/<filename>')
 def view_file(topic, filename):
-    """View a specific JSON file with complete metadata"""
+    """View a specific JSON file with complete metadata and versions"""
     file_path = os.path.join('data', 'by_topic', topic, filename)
 
     if not os.path.exists(file_path) or not file_path.endswith('.json'):
@@ -183,6 +183,15 @@ def view_file(topic, filename):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             full_content = json.load(f)
+
+            # Get base_id to find all versions
+            base_id = full_content.get('base_id')
+            current_version_id = full_content.get('id')
+
+            # Get all versions of this article
+            versions = []
+            if base_id:
+                versions = get_article_versions(base_id)
 
             # Get original content if spell corrections were made
             original_content = full_content.get('original_content')
@@ -206,17 +215,138 @@ def view_file(topic, filename):
                 'date': full_content.get('date', ''),
                 'newspaper': full_content.get('newspaper', ''),
                 'canton': full_content.get('canton', ''),
-                'word_count': full_content.get('word_count', ''),
+                'word_count': full_content.get('word_count', 0),
                 'url': full_content.get('url', ''),
                 'spell_corrected': spell_corrected,
+                'correction_method': full_content.get('correction_method', 'none'),
+                'language': full_content.get('language', 'fr'),
                 'diff_html': diff_html,
-                'show_diff': show_diff
+                'show_diff': show_diff,
+                'versions': versions,
+                'current_version_id': current_version_id,
+                'base_id': base_id
             }
 
         return render_template('view_file.html', filename=filename, topic=topic, **metadata)
     except Exception as e:
         logger.error(f"Error reading file {file_path}: {str(e)}")
         return render_template('view_file.html', error=str(e), filename=filename, topic=topic)
+
+
+@app.route('/version/<version_id>')
+def view_version(version_id):
+    """View a specific version of an article"""
+    # Extract base_id more reliably using pattern matching
+    # The pattern for base_id is "article_YYYYMMDD_newspapername"
+    match = re.match(r'(article_\d{8}_[^_]+)(_.*)?', version_id)
+
+    if not match:
+        logger.error(f"Invalid version_id format: {version_id}")
+        abort(404)
+
+    base_id = match.group(1)
+    logger.debug(f"base_id: {base_id}")
+
+    # First check if this exact base_id exists
+    version_path = Path('data') / 'processed' / 'versions' / base_id / f"{version_id}.json"
+
+    # If not found, try to find the actual directory by pattern
+    if not version_path.exists():
+        versions_dir = Path('data') / 'processed' / 'versions'
+        possible_dirs = list(versions_dir.glob(f"article_*_{version_id.split('_')[2]}*"))
+
+        if possible_dirs:
+            # Use the first matching directory
+            base_id = possible_dirs[0].name
+            version_path = possible_dirs[0] / f"{version_id}.json"
+        else:
+            abort(404)
+
+    if not version_path.exists():
+        abort(404)
+
+    try:
+        with open(version_path, 'r', encoding='utf-8') as f:
+            full_content = json.load(f)
+
+        # The correct base_id should be in the JSON file itself
+        if 'base_id' in full_content:
+            base_id = full_content['base_id']
+
+        # Get all versions of this article
+        versions = get_article_versions(base_id)
+
+        # Get the raw text (original uncorrected content) from the raw file
+        raw_path = full_content.get('raw_path')
+        original_content = None
+
+        if raw_path and os.path.exists(raw_path):
+            try:
+                with open(raw_path, 'r', encoding='utf-8') as f:
+                    original_content = f.read()
+                    logger.info(f"Loaded original content from raw file: {raw_path}")
+            except Exception as e:
+                logger.error(f"Failed to load original content from {raw_path}: {str(e)}")
+
+        # If raw_path doesn't exist or couldn't be read, try to get from the file itself
+        if not original_content:
+            original_content = full_content.get('original_content')
+
+        content = full_content.get('content', '')
+        spell_corrected = full_content.get('spell_corrected', False)
+        correction_method = full_content.get('correction_method', 'none')
+
+        # Generate diff HTML if there are spell corrections
+        diff_html = None
+        show_diff = False
+
+        if spell_corrected and original_content and correction_method != 'none':
+            from newspapers_scrap.utils.diff_generator import generate_html_diff
+            diff_html = generate_html_diff(original_content, content)
+            show_diff = True
+            logger.info("Generated diff HTML for version view")
+
+        metadata = {
+            'title': full_content.get('title', ''),
+            'content': content,
+            'original_content': original_content,
+            'date': full_content.get('date', ''),
+            'newspaper': full_content.get('newspaper', ''),
+            'canton': full_content.get('canton', ''),
+            'word_count': full_content.get('word_count', 0),
+            'url': full_content.get('url', ''),
+            'spell_corrected': spell_corrected,
+            'correction_method': correction_method,
+            'language': full_content.get('language', 'fr'),
+            'diff_html': diff_html,
+            'show_diff': show_diff,
+            'versions': versions,
+            'current_version_id': version_id,
+            'base_id': base_id,
+            'is_version_view': True
+        }
+
+        # Determine which topic this article belongs to
+        topic = "unknown"
+        for root, dirs, files in os.walk(Path('data') / 'by_topic'):
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        file_data = json.load(f)
+                        if file_data.get('base_id') == base_id:
+                            topic = os.path.basename(root)
+                            break
+                except:
+                    continue
+            if topic != "unknown":
+                break
+
+        return render_template('view_file.html', filename=f"{version_id}.json", topic=topic, **metadata)
+
+    except Exception as e:
+        logger.error(f"Error reading version file {version_path}: {str(e)}")
+        return render_template('view_file.html', error=str(e), filename=f"{version_id}.json", topic="unknown")
 
 
 @app.route('/api/file/<topic>/<filename>')
@@ -325,6 +455,41 @@ def search():
 
     socketio.start_background_task(emit_output)
     return jsonify({'status': 'started'})
+
+
+def get_article_versions(base_id):
+    """
+    Retrieve all versions of an article.
+
+    Args:
+        base_id: The base ID of the article.
+
+    Returns:
+        A list of dictionaries containing version metadata.
+    """
+    versions_dir = Path('data') / 'processed' / 'versions' / base_id
+    if not versions_dir.exists():
+        return []
+
+    versions = []
+    for version_file in versions_dir.glob('*.json'):
+        try:
+            with open(version_file, 'r', encoding='utf-8') as f:
+                version_data = json.load(f)
+                versions.append({
+                    'id': version_data['id'],
+                    'correction_method': version_data.get('correction_method', 'none'),
+                    'language': version_data.get('language', 'fr'),
+                    'word_count': version_data.get('word_count', 0),
+                    'created_at': version_data.get('created_at', ''),
+                    'path': str(version_file)
+                })
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"Error reading version file {version_file}: {str(e)}")
+
+    # Sort versions by creation date (newest first)
+    versions.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    return versions
 
 
 if __name__ == '__main__':
