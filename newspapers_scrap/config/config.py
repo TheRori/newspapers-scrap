@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, create_model
 
 
-# Define the base models for structured access
+# Define the base ressources for structured access
 class URLs(BaseModel):
     base_newspaper_archives: str
 
@@ -84,6 +84,8 @@ class StorageConfig(BaseModel):
     processed_data_dir: str
     topics_data_dir: str
     logs_dir: str
+    models_dir: str
+    dicts_dir: str
 
 
 class Storage(BaseModel):

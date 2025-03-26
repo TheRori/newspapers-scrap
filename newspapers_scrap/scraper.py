@@ -254,7 +254,7 @@ class NewspaperScraper:
     from newspapers_scrap.data_manager.organizer import organize_article
 
     async def save_articles_from_search(self, query: str, output_dir: str = None,
-                                        max_pages: int = 1, newspapers: List[str] = None,
+                                        max_searches: int = 1, newspapers: List[str] = None,
                                         cantons: List[str] = None, deq: int = None,
                                         yeq: int = None) -> List[Dict[str, Any]]:
         """
@@ -263,7 +263,7 @@ class NewspaperScraper:
         Args:
             query: The search query text
             output_dir: Directory to save the articles (override default location)
-            max_pages: Maximum number of search result pages to process
+            max_searches: Maximum searches to perform
             newspapers: List of newspaper codes to restrict the search to
             cantons: List of canton codes to restrict the search to
             deq: Filter by decade (e.g., 197 for 1970-1979, 200 for 2000-2009)
@@ -274,7 +274,8 @@ class NewspaperScraper:
         """
         try:
             all_results = []
-            max_pages = min(max_pages, self.config.scraping.limits.max_search_pages)
+            max_pages = self.config.scraping.limits.max_search_pages
+            max_results = min(max_searches, self.config.scraping.limits.max_results_per_search)
 
             for page in range(1, max_pages + 1):
                 logger.info(f"Processing search results page {page} for query '{query}'")
@@ -282,7 +283,6 @@ class NewspaperScraper:
                 if not search_results:
                     logger.info(f"No results found on page {page}. Stopping pagination.")
                     break
-                max_results = min(len(search_results), self.config.scraping.limits.max_results_per_search)
 
                 for i, result in enumerate(search_results[:max_results]):
                     logger.info(f"Processing article {i + 1}/{max_results}: {result['title']}")

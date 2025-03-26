@@ -9,3 +9,12 @@ typer~=0.15.2
 
 requests~=2.32.3
 beautifulsoup4~=4.13.3
+Flask~=3.1.0
+Flask-SocketIO~=5.5.1
+newspapers_scrap~=0.0.1
+symspellpy~=6.9.0
+PyYAML~=6.0.2
+pydantic~=2.10.6
+bs4~=0.0.2
+playwright~=1.51.0
+aiohttp~=3.11.14

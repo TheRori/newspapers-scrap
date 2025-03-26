@@ -53,7 +53,7 @@ document.getElementById('searchForm').addEventListener('submit', function(e) {
         query: document.getElementById('query').value,
         newspapers: document.getElementById('newspapers').value,
         cantons: document.getElementById('cantons').value,
-        pages: document.getElementById('pages').value,
+        searches : document.getElementById('searches').value,
         deq: document.getElementById('deq').value,
         yeq: document.getElementById('yeq').value
     };

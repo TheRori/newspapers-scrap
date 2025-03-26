@@ -28,7 +28,7 @@ async def async_main():
     parser.add_argument('query', help='Search query text')
     parser.add_argument('--newspapers', type=str, nargs='+', help='Newspaper codes to search (e.g., LLE for La Liberté)')
     parser.add_argument('--output', type=str, help='Output directory to save articles', default=None)
-    parser.add_argument('--pages', type=int, help='Maximum pages to search', default=1)
+    parser.add_argument('--sch', type=int, help='Maximum searches', default=1)
     parser.add_argument('--proxies', type=str, default=None, help='Path to JSON file containing proxy configurations')
     parser.add_argument('--cantons', type=str, nargs='+', help='Canton codes to search (e.g., GE for Geneva)')
     parser.add_argument('--deq', type=str, help='Filter by decade (e.g., 197 for 1970-1979, 200 for 2000-2009)')
@@ -59,7 +59,7 @@ async def async_main():
     results = await scraper.save_articles_from_search(
         query=args.query,
         output_dir=args.output,
-        max_pages=args.pages,
+        max_searches=args.sch,
         newspapers=args.newspapers,
         cantons=args.cantons,
         deq=args.deq,

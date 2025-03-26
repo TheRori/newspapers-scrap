@@ -4,3 +4,5 @@ PATHS:
   processed_data_dir: 'data/processed'
   topics_data_dir: 'data/by_topic'
   logs_dir: 'logs'
+  models_dir: 'ressources/dicts'
+  dicts_dir: 'data/dicts/raw_dicts'

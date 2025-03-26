@@ -58,6 +58,77 @@
         .back-link:hover {
             text-decoration: underline;
         }
+        /* Styles for diff view */
+        .added {
+            background-color: #d4ffd4;
+            color: #006400;
+            text-decoration: none;
+        }
+        .removed {
+            background-color: #ffd4d4;
+            color: #8b0000;
+            text-decoration: line-through;
+        }
+        .unchanged {
+            color: #212529;
+        }
+        .diff-container {
+            line-height: 1.6;
+            padding: 15px;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            background-color: #f8f9fa;
+        }
+        .tab-container {
+            margin-top: 20px;
+        }
+        .tab-buttons {
+            display: flex;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 15px;
+        }
+        .tab-button {
+            background: none;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-right: 10px;
+            font-weight: 500;
+        }
+        .tab-button.active {
+            border-bottom: 2px solid #007bff;
+            color: #007bff;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .legend {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+            font-size: 0.9em;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+        }
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .legend-color.added-color {
+            background-color: #d4ffd4;
+        }
+        .legend-color.removed-color {
+            background-color: #ffd4d4;
+        }
     </style>
 </head>
 <body>
@@ -95,9 +166,69 @@
                     <a href="{{ url }}" target="_blank">Original article</a>
                 </div>
                 {% endif %}
+                {% if spell_corrected %}
+                <div class="metadata-item" style="color: #28a745;">
+                    <strong>Spell Corrected</strong>
+                </div>
+                {% endif %}
             </div>
         </div>
 
+        {% if show_diff %}
+        <div class="tab-container">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="showTab('content-tab')">Article Content</button>
+                <button class="tab-button" onclick="showTab('diff-tab')">Spelling Corrections</button>
+                <button class="tab-button" onclick="showTab('original-tab')">Original Text</button>
+            </div>
+
+            <div id="content-tab" class="tab-content active">
+                <div class="article-content">
+                    {% if content %}
+                        {% for paragraph in content.split('\n') %}
+                            {% if paragraph.strip() %}
+                                <p>{{ paragraph }}</p>
+                            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        <p>No content available for this article.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div id="diff-tab" class="tab-content">
+                <h3>Spelling Corrections</h3>
+                <div class="diff-container">
+                    {{ diff_html|safe }}
+                </div>
+                <div class="legend">
+                    <div class="legend-item">
+                        <span class="legend-color removed-color"></span>
+                        <span>Removed (Original)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color added-color"></span>
+                        <span>Added (Corrected)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="original-tab" class="tab-content">
+                <h3>Original Text (Before Correction)</h3>
+                <div class="article-content">
+                    {% if original_content %}
+                        {% for paragraph in original_content.split('\n') %}
+                            {% if paragraph.strip() %}
+                                <p>{{ paragraph }}</p>
+                            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        <p>Original content not available.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% else %}
         <div class="article-content">
             {% if content %}
                 {% for paragraph in content.split('\n') %}
@@ -110,6 +241,30 @@
             {% endif %}
         </div>
         {% endif %}
+        {% endif %}
     </div>
+
+    <script>
+        function showTab(tabId) {
+            // Hide all tab contents
+            const tabContents = document.getElementsByClassName('tab-content');
+            for (let i = 0; i < tabContents.length; i++) {
+                tabContents[i].classList.remove('active');
+            }
+
+            // Remove active class from all tab buttons
+            const tabButtons = document.getElementsByClassName('tab-button');
+            for (let i = 0; i < tabButtons.length; i++) {
+                tabButtons[i].classList.remove('active');
+            }
+
+            // Show the selected tab content and set the button as active
+            document.getElementById(tabId).classList.add('active');
+            const buttons = document.querySelectorAll(`button[onclick="showTab('${tabId}')"]`);
+            if (buttons.length > 0) {
+                buttons[0].classList.add('active');
+            }
+        }
+    </script>
 </body>
 </html>

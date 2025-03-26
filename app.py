@@ -66,7 +66,6 @@ def stream_process(process, queue):
             complete_match = total_pattern.search(line)
             if complete_match:
                 saved_articles = int(complete_match.group(1))
-                queue.put(f"Completed: {saved_articles} articles processed")
 
     finally:
         process.stdout.close()
@@ -172,6 +171,7 @@ def browse_topics():
         max_words=max_words or ''
     )
 
+
 @app.route('/browse/<topic>/<filename>')
 def view_file(topic, filename):
     """View a specific JSON file with complete metadata"""
@@ -183,16 +183,36 @@ def view_file(topic, filename):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             full_content = json.load(f)
+
+            # Get original content if spell corrections were made
+            original_content = full_content.get('original_content')
+            content = full_content.get('content', '')
+            spell_corrected = full_content.get('spell_corrected', False)
+
+            # Generate diff HTML if there are spell corrections
+            diff_html = None
+            show_diff = False
+
+            if spell_corrected and original_content:
+                from newspapers_scrap.utils.diff_generator import generate_html_diff
+                diff_html = generate_html_diff(original_content, content)
+                show_diff = True
+
             # Extract metadata for template
             metadata = {
                 'title': full_content.get('title', ''),
-                'content': full_content.get('content', ''),
+                'content': content,
+                'original_content': original_content,
                 'date': full_content.get('date', ''),
                 'newspaper': full_content.get('newspaper', ''),
                 'canton': full_content.get('canton', ''),
                 'word_count': full_content.get('word_count', ''),
-                'url': full_content.get('url', '')
+                'url': full_content.get('url', ''),
+                'spell_corrected': spell_corrected,
+                'diff_html': diff_html,
+                'show_diff': show_diff
             }
+
         return render_template('view_file.html', filename=filename, topic=topic, **metadata)
     except Exception as e:
         logger.error(f"Error reading file {file_path}: {str(e)}")
@@ -230,6 +250,8 @@ def index():
 def search():
     data = request.json
 
+    logger.debug(f"Received search request: {data}")
+
     # Build command arguments
     cmd = [sys.executable, 'scripts/run_search.py', data['query']]
 
@@ -237,8 +259,8 @@ def search():
         cmd.extend(['--newspapers'] + data['newspapers'].split())
     if data.get('cantons'):
         cmd.extend(['--cantons'] + data['cantons'].split())
-    if data.get('pages'):
-        cmd.extend(['--pages', str(data['pages'])])
+    if data.get('searches'):
+        cmd.extend(['--sch', str(data['searches'])])
     if data.get('deq'):
         cmd.extend(['--deq', data['deq']])
     if data.get('yeq'):

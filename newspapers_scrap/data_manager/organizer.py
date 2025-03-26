@@ -16,12 +16,31 @@ def organize_article(
         article_title: str,
         newspaper_name: str,
         date_str: str,
-        canton: Optional[str] = None
+        canton: Optional[str] = None,
+        apply_spell_correction: bool = False,
+        language: str = 'fr'  # Default to French for Swiss newspapers
 ) -> Dict:
     """
     Organize an article into the data structure and return its metadata
     """
     import unicodedata
+
+    if apply_spell_correction:
+        try:
+            from newspapers_scrap.utils.spellcheck import SpellCorrector
+            spell_corrector = SpellCorrector(language=language)
+            corrected_text = spell_corrector.correct_text(article_text)
+            # Check if any corrections were made
+            has_corrections = corrected_text != article_text
+            if has_corrections is False:
+                logger.info("No spelling errors found")
+        except Exception as e:
+            logger.error(f"Spell correction failed: {str(e)}")
+            corrected_text = article_text
+            has_corrections = False
+    else:
+        corrected_text = article_text
+        has_corrections = False
 
     # Parse date with multiple language support
     date_obj = None
@@ -58,7 +77,7 @@ def organize_article(
     newspaper_id = normalize_filename(newspaper_name)
     article_id = f"article_{date_obj.strftime('%Y%m%d')}_{newspaper_id}"
 
-    # Get data directories from config
+    # Get data directories from config - using existing path implementation
     raw_data_dir = Path(env.storage.paths.raw_data_dir)
     processed_data_dir = Path(env.storage.paths.processed_data_dir)
     topics_data_dir = Path(env.storage.paths.topics_data_dir)
@@ -75,7 +94,7 @@ def organize_article(
 
     # Save raw content
     with open(raw_path, "w", encoding="utf-8") as f:
-        f.write(article_text)
+        f.write(article_text)  # Save original uncorrected text
 
     # Create processed content (with metadata)
     processed_data = {
@@ -86,8 +105,10 @@ def organize_article(
         "topics": [search_term],
         "url": url,
         "raw_path": str(raw_path),
-        "content": article_text,
-        "word_count": len(article_text.split()),
+        "content": corrected_text,  # Use corrected text
+        "original_content": article_text if has_corrections else None,  # Store original if different
+        "spell_corrected": has_corrections,
+        "word_count": len(corrected_text.split()),
         "canton": canton
     }
 
@@ -110,4 +131,5 @@ def organize_article(
 
     metadata = {**processed_data}
     metadata.pop("content", None)
+    metadata.pop("original_content", None)  # Remove original content from metadata
     return metadata
