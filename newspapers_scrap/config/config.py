@@ -62,7 +62,6 @@ class Headers(BaseModel):
 class RequestLimits(BaseModel):
     request_delay_min: float
     request_delay_max: float
-    max_search_pages: int
     max_results_per_search: int
 
 
@@ -73,7 +72,6 @@ class RequestConfig(BaseModel):
 class Limits(BaseModel):
     request_delay_min: float
     request_delay_max: float
-    max_search_pages: int
     max_results_per_search: int
 
 

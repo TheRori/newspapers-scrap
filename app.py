@@ -19,13 +19,15 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'newspaper-search-secret'
+app.config['DEBUG'] = True
+app.config['TEMPLATES_AUTO_RELOAD'] = False
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 
 def stream_process(process, queue):
     article_found_pattern = re.compile(r'Processing article (\d+)/(\d+)')
     total_pattern = re.compile(r'Processing complete\. (\d+) articles processed')
-    processed_pattern = re.compile(r'Processed content saved to: (.*?)\.json')
+    processed_pattern = re.compile(r'Version saved to: (.*?)\.json')
 
     try:
         for line in iter(process.stdout.readline, ''):
@@ -37,9 +39,19 @@ def stream_process(process, queue):
             except UnicodeEncodeError:
                 print(line.encode('utf-8', errors='replace').decode('ascii',
                                                                     errors='replace'))  # Safely encode problematic characters
+
+            # When an article is saved, extract path and add to queue
             processed_match = processed_pattern.search(line)
             if processed_match:
                 json_path = processed_match.group(1) + '.json'
+                # Send this message to queue to display in web app
+                queue.put(f"Article saved to: {json_path}")
+
+                # Also emit using socketio for immediate display
+                socketio.emit('article_saved', {
+                    'path': json_path
+                })
+
                 try:
                     with open(json_path, 'r', encoding='utf-8') as f:
                         article_data = json.load(f)
@@ -51,21 +63,25 @@ def stream_process(process, queue):
                 except Exception as e:
                     queue.put(f"Error reading article data: {str(e)}")
 
+            # Process progress information
             progress_match = article_found_pattern.search(line)
             if progress_match:
                 current_article = int(progress_match.group(1))
                 total_articles = int(progress_match.group(2))
                 progress = int((current_article / total_articles) * 100)
+                # Add to queue for display in logs
+                queue.put(f"Processing: {current_article}/{total_articles} articles ({progress}%)")
+                # Update progress bar through socketio
                 socketio.emit('progress', {
                     'value': progress,
                     'saved': current_article,
                     'total': total_articles
                 })
-                queue.put(f"Processing: {current_article}/{total_articles} articles ({progress}%)")
 
             complete_match = total_pattern.search(line)
             if complete_match:
                 saved_articles = int(complete_match.group(1))
+                queue.put(f"Completed processing {saved_articles} articles")
 
     finally:
         process.stdout.close()
@@ -91,6 +107,10 @@ def browse_topics():
     min_words = request.args.get('min_words', '')
     max_words = request.args.get('max_words', '')
 
+    # Get pagination parameters
+    limit_per_topic = 5  # Default number of articles to show per topic
+    show_all_topic = request.args.get('show_all_topic', '')  # Topic name to show all results
+
     # Convert to integers if present
     min_words = int(min_words) if min_words and min_words.isdigit() else None
     max_words = int(max_words) if max_words and max_words.isdigit() else None
@@ -104,9 +124,12 @@ def browse_topics():
         if os.path.isdir(topic_path):
             topic_info = {
                 'name': topic,
-                'files': []
+                'files': [],
+                'total_files': 0,
+                'showing_all': topic == show_all_topic
             }
 
+            matching_files = []
             for file in sorted(os.listdir(topic_path)):
                 if file.endswith('.json'):
                     file_path = os.path.join(topic_path, file)
@@ -149,16 +172,27 @@ def browse_topics():
                                     'newspaper': file_data.get('newspaper', 'Unknown source'),
                                     'canton': file_data.get('canton', None)
                                 }
-                                topic_info['files'].append(file_info)
+                                matching_files.append(file_info)
                     except Exception as e:
                         logger.error(f"Error reading file {file_path}: {str(e)}")
                         if not filter_word and not filter_date_from and not filter_date_to and min_words is None and max_words is None:
                             # Only add error files if no filters are active
-                            topic_info['files'].append({
+                            matching_files.append({
                                 'filename': file,
                                 'title': 'Error reading file',
                                 'error': str(e)
                             })
+
+            # Set total count of matching files
+            topic_info['total_files'] = len(matching_files)
+
+            # Apply limit unless showing all for this topic
+            if topic == show_all_topic or len(matching_files) <= limit_per_topic:
+                topic_info['files'] = matching_files
+            else:
+                topic_info['files'] = matching_files[:limit_per_topic]
+                topic_info['has_more'] = True
+
             topics.append(topic_info)
 
     return render_template(
@@ -168,7 +202,95 @@ def browse_topics():
         date_from=filter_date_from,
         date_to=filter_date_to,
         min_words=min_words or '',
-        max_words=max_words or ''
+        max_words=max_words or '',
+        limit_per_topic=limit_per_topic
+    )
+
+
+@app.route('/topic/<topic_name>')
+def topic_results(topic_name):
+    """Display all articles for a specific topic with filtering"""
+    topic_path = Path('data') / 'by_topic' / topic_name
+
+    # Get filter parameters
+    filter_word = request.args.get('filter_word', '').strip().lower()
+    filter_date_from = request.args.get('date_from', '')
+    filter_date_to = request.args.get('date_to', '')
+    min_words = request.args.get('min_words', '')
+    max_words = request.args.get('max_words', '')
+
+    # Convert to integers if present
+    min_words = int(min_words) if min_words and min_words.isdigit() else None
+    max_words = int(max_words) if max_words and max_words.isdigit() else None
+
+    if not topic_path.exists() or not topic_path.is_dir():
+        return render_template('topic_results.html', error=f'Topic {topic_name} not found',
+                               topic_name=topic_name, files=[])
+
+    files = []
+    for file in sorted(os.listdir(topic_path)):
+        if file.endswith('.json'):
+            file_path = os.path.join(topic_path, file)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    file_data = json.load(f)
+
+                    # Check if file matches the filter criteria
+                    include_file = True
+
+                    # Word filter (in title or content)
+                    if filter_word:
+                        title = file_data.get('title', '').lower()
+                        content = file_data.get('content', '').lower()
+                        if filter_word not in title and filter_word not in content:
+                            include_file = False
+
+                    # Date range filter
+                    if include_file and (filter_date_from or filter_date_to):
+                        file_date = file_data.get('date', '')
+                        if filter_date_from and file_date < filter_date_from:
+                            include_file = False
+                        if filter_date_to and file_date > filter_date_to:
+                            include_file = False
+
+                    # Word count filter
+                    if include_file and (min_words is not None or max_words is not None):
+                        word_count = file_data.get('word_count', 0)
+                        if min_words is not None and word_count < min_words:
+                            include_file = False
+                        if max_words is not None and word_count > max_words:
+                            include_file = False
+
+                    if include_file:
+                        file_info = {
+                            'filename': file,
+                            'title': file_data.get('title', 'No title'),
+                            'date': file_data.get('date', 'Unknown date'),
+                            'word_count': file_data.get('word_count', 0),
+                            'newspaper': file_data.get('newspaper', 'Unknown source'),
+                            'canton': file_data.get('canton', None)
+                        }
+                        files.append(file_info)
+            except Exception as e:
+                logger.error(f"Error reading file {file_path}: {str(e)}")
+                if not filter_word and not filter_date_from and not filter_date_to and min_words is None and max_words is None:
+                    # Only add error files if no filters are active
+                    files.append({
+                        'filename': file,
+                        'title': 'Error reading file',
+                        'error': str(e)
+                    })
+
+    return render_template(
+        'topic_results.html',
+        topic_name=topic_name,
+        files=files,
+        filter_word=filter_word,
+        date_from=filter_date_from,
+        date_to=filter_date_to,
+        min_words=min_words or '',
+        max_words=max_words or '',
+        total_files=len(files)
     )
 
 
@@ -201,9 +323,8 @@ def view_file(topic, filename):
             # Generate diff HTML if there are spell corrections
             diff_html = None
             show_diff = False
-
             if spell_corrected and original_content:
-                from newspapers_scrap.utils.diff_generator import generate_html_diff
+                from newspapers_scrap.utils import generate_html_diff
                 diff_html = generate_html_diff(original_content, content)
                 show_diff = True
 
@@ -236,42 +357,57 @@ def view_file(topic, filename):
 @app.route('/version/<version_id>')
 def view_version(version_id):
     """View a specific version of an article"""
-    # Extract base_id more reliably using pattern matching
-    # The pattern for base_id is "article_YYYYMMDD_newspapername"
-    match = re.match(r'(article_\d{8}_[^_]+)(_.*)?', version_id)
+    logger.debug(f"Requested version_id: {version_id}")
 
-    if not match:
-        logger.error(f"Invalid version_id format: {version_id}")
+    # Check if this exact version_id exists anywhere
+    versions_dir = Path('data') / 'processed' / 'versions'
+    version_file = None
+    base_dir = None
+
+    # First, try to find the version file directly
+    for base_dir_path in versions_dir.glob('article_*'):
+        potential_file = base_dir_path / f"{version_id}.json"
+        if potential_file.exists():
+            version_file = potential_file
+            base_dir = base_dir_path
+            break
+
+    # If not found, try to extract base_id parts from version_id
+    if not version_file:
+        # Extract date and newspaper from version_id
+        parts = version_id.split('_')
+        if len(parts) >= 3:
+            date_part = parts[1]  # Should be YYYYMMDD
+            newspaper_part = parts[2]  # Newspaper identifier
+
+            # Look for matching base directories
+            potential_dirs = list(versions_dir.glob(f"article_{date_part}_{newspaper_part}*"))
+            if potential_dirs:
+                base_dir = potential_dirs[0]
+                version_file = base_dir / f"{version_id}.json"
+
+                # If exact file doesn't exist, try to find any file with this version_id
+                if not version_file.exists():
+                    matching_files = list(base_dir.glob(f"*{version_id}*.json"))
+                    if matching_files:
+                        version_file = matching_files[0]
+
+    if not version_file or not version_file.exists():
+        logger.error(f"Could not find version file for: {version_id}")
         abort(404)
 
-    base_id = match.group(1)
-    logger.debug(f"base_id: {base_id}")
-
-    # First check if this exact base_id exists
-    version_path = Path('data') / 'processed' / 'versions' / base_id / f"{version_id}.json"
-
-    # If not found, try to find the actual directory by pattern
-    if not version_path.exists():
-        versions_dir = Path('data') / 'processed' / 'versions'
-        possible_dirs = list(versions_dir.glob(f"article_*_{version_id.split('_')[2]}*"))
-
-        if possible_dirs:
-            # Use the first matching directory
-            base_id = possible_dirs[0].name
-            version_path = possible_dirs[0] / f"{version_id}.json"
-        else:
-            abort(404)
-
-    if not version_path.exists():
-        abort(404)
+    base_id = base_dir.name if base_dir else None
+    logger.debug(f"Found base_id: {base_id}")
+    logger.debug(f"Using version file: {version_file}")
 
     try:
-        with open(version_path, 'r', encoding='utf-8') as f:
+        with open(version_file, 'r', encoding='utf-8') as f:
             full_content = json.load(f)
 
-        # The correct base_id should be in the JSON file itself
+        # Get the base_id from the content if available
         if 'base_id' in full_content:
             base_id = full_content['base_id']
+            logger.debug(f"Updated base_id from file content: {base_id}")
 
         # Get all versions of this article
         versions = get_article_versions(base_id)
@@ -301,7 +437,7 @@ def view_version(version_id):
         show_diff = False
 
         if spell_corrected and original_content and correction_method != 'none':
-            from newspapers_scrap.utils.diff_generator import generate_html_diff
+            from newspapers_scrap.utils import generate_html_diff
             diff_html = generate_html_diff(original_content, content)
             show_diff = True
             logger.info("Generated diff HTML for version view")
@@ -328,24 +464,26 @@ def view_version(version_id):
 
         # Determine which topic this article belongs to
         topic = "unknown"
-        for root, dirs, files in os.walk(Path('data') / 'by_topic'):
-            for file in files:
-                file_path = os.path.join(root, file)
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        file_data = json.load(f)
-                        if file_data.get('base_id') == base_id:
-                            topic = os.path.basename(root)
-                            break
-                except:
-                    continue
-            if topic != "unknown":
-                break
+        topics_dir = Path('data') / 'by_topic'
+        if topics_dir.exists():
+            for topic_dir in topics_dir.iterdir():
+                if topic_dir.is_dir():
+                    for file_path in topic_dir.glob('*.json'):
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                file_data = json.load(f)
+                                if file_data.get('base_id') == base_id:
+                                    topic = topic_dir.name
+                                    break
+                        except:
+                            continue
+                    if topic != "unknown":
+                        break
 
         return render_template('view_file.html', filename=f"{version_id}.json", topic=topic, **metadata)
 
     except Exception as e:
-        logger.error(f"Error reading version file {version_path}: {str(e)}")
+        logger.error(f"Error reading version file {version_file}: {str(e)}")
         return render_template('view_file.html', error=str(e), filename=f"{version_id}.json", topic="unknown")
 
 
@@ -376,7 +514,6 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/api/search', methods=['POST'])
 @app.route('/api/search', methods=['POST'])
 def search():
     data = request.json
@@ -493,4 +630,4 @@ def get_article_versions(base_id):
 
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    socketio.run(app, debug=True, use_reloader=False)

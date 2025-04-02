@@ -19,6 +19,11 @@
             position: relative;
         }
 
+        .container.no-versions {
+            margin-left: auto;
+            margin-right: auto;
+        }
+
         .versions-sidebar {
             position: fixed;
             left: 0;
@@ -244,7 +249,8 @@
     <a href="/browse">Browse Topics</a>
 </div>
 
-<div class="container">
+<!-- Modify the container class conditional -->
+<div class="container {% if not versions or versions|length <= 1 %}no-versions{% endif %}">
     {% if error %}
     <div class="error-message">
         {{ error }}
@@ -280,6 +286,7 @@
             {% endif %}
         </div>
     </div>
+
     {% if versions and versions|length > 1 %}
     <div class="versions-sidebar">
         <h3>Versions</h3>
@@ -301,7 +308,8 @@
         </div>
     </div>
     {% endif %}
-    {% if show_diff %}
+
+    {% if show_diff and original_content %}
     <div class="tab-container">
         <div class="tab-buttons">
             <button class="tab-button active" onclick="showTab('content-tab')">Article Content</button>
@@ -368,6 +376,7 @@
         {% endif %}
     </div>
     {% endif %}
+
     {% endif %}
 </div>
 

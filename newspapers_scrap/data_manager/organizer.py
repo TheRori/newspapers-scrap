@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import json
@@ -6,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 from newspapers_scrap.config.config import env
+from newspapers_scrap.utils import clean_and_parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -102,31 +104,15 @@ def organize_article(
         has_corrections = False
         correction_method = "none"  # Explicitly mark as no correction
 
-    # Parse date with multiple language support
-    date_obj = None
+        # Parse the date with the robust parser
+    current_date = datetime.now()
+    parsed_date = clean_and_parse_date(date_str, default_date=current_date)
 
-    # Try different locales for date parsing
-    locales = ['en_US.UTF-8', 'fr_FR.UTF-8', 'de_DE.UTF-8']
-
-    import locale
-    original_locale = locale.getlocale(locale.LC_TIME)
-
-    for loc in locales:
-        try:
-            locale.setlocale(locale.LC_TIME, loc)
-            date_obj = datetime.strptime(date_str, "%d. %B %Y")
-            break
-        except (ValueError, locale.Error):
-            continue
-
-    try:
-        locale.setlocale(locale.LC_TIME, original_locale)
-    except locale.Error:
-        locale.setlocale(locale.LC_TIME, '')
-
-    if not date_obj:
-        date_obj = datetime.now()
+    if parsed_date == current_date and date_str:
         logger.warning(f"Could not parse date '{date_str}', using current date")
+
+    # Format the date for storage
+    formatted_date = parsed_date.strftime('%Y-%m-%d')
 
     def normalize_filename(text):
         text = unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('ASCII')
@@ -134,8 +120,9 @@ def organize_article(
         text = re.sub(r'[^a-zA-Z0-9_-]', '', text)
         return text.lower()
 
+    content_hash = hashlib.md5((url + article_text[:200]).encode('utf-8')).hexdigest()[:8]
     newspaper_id = normalize_filename(newspaper_name)
-    base_article_id = f"article_{date_obj.strftime('%Y%m%d')}_{newspaper_id}"
+    base_article_id = f"article_{formatted_date}_{newspaper_id}_{content_hash}"
 
     # Add versioning: base ID + correction method + language if not "none"
     version_suffix = f"_{correction_method}"
@@ -197,11 +184,12 @@ def organize_article(
         "base_id": base_article_id,
         "title": article_title,
         "newspaper": newspaper_name,
-        "date": date_obj.strftime("%Y-%m-%d"),
+        "date": formatted_date,
         "topics": [search_term],
         "url": url,
         "raw_path": str(raw_path),
         "content": corrected_text,
+        "original_content": article_text,
         "spell_corrected": has_corrections,
         "correction_method": correction_method,
         "language": language,

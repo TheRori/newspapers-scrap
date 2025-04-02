@@ -1,6 +1,7 @@
 # newspapers_scrap/scraper.py
 import logging_config
 import logging
+
 logger = logging.getLogger(__name__)
 import os
 import time
@@ -18,11 +19,11 @@ from newspapers_scrap.security import UserAgentManager, ProxyManager, BrowserFin
     exponential_backoff, SimpleRobotsParser
 
 
-
 class NewspaperScraper:
     """Base scraper for newspaper websites"""
 
-    def __init__(self, newspaper_key=None, config=None, apply_spell_correction=False, correction_method=None, language='fr'):
+    def __init__(self, newspaper_key=None, config=None, apply_spell_correction=False, correction_method=None,
+                 language='fr'):
         self.config = config or env
         key = newspaper_key or 'e_newspaper_archives'
         self.newspaper_config = self.config.selectors.newspapers.e_newspaper_archives
@@ -181,10 +182,14 @@ class NewspaperScraper:
         params = {
             'a': search_params.a,
             'hs': search_params.hs,
-            'r': search_params.r,
             'results': search_params.results,
             'txq': query
         }
+
+        # Calculate the starting result index for pagination
+        # Each page has 20 results, so page 1 starts at r=1, page 2 at r=21, etc.
+        start_index = ((page - 1) * 20) + 1
+        params['r'] = str(start_index)
 
         # Add newspaper filters if specified
         if newspapers:
@@ -201,9 +206,6 @@ class NewspaperScraper:
         # Add year filter if specified
         if yeq is not None:
             params['yeq'] = str(yeq)
-
-        if page > 1:
-            params['page'] = str(page)
 
         query_string = '&'.join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items()])
         search_url = f"{self.base_url}/?{query_string}"
@@ -288,25 +290,32 @@ class NewspaperScraper:
         """
         try:
             all_results = []
-            max_pages = self.config.scraping.limits.max_search_pages
             max_results = min(max_searches, self.config.scraping.limits.max_results_per_search)
 
-            for page in range(1, max_pages + 1):
+            total_collected = 0
+            page = 1
+
+            while total_collected < max_searches:
                 logger.info(f"Processing search results page {page} for query '{query}'")
                 search_results = await self.search(query, page, newspapers, cantons, deq, yeq)
+
                 if not search_results:
                     logger.info(f"No results found on page {page}. Stopping pagination.")
                     break
 
-                for i, result in enumerate(search_results[:max_results]):
-                    logger.info(f"Processing article {i + 1}/{max_results}: {result['title']}")
+                # Calculate how many results to take from this page
+                remaining = max_searches - total_collected
+                results_to_process = min(len(search_results), remaining)
+
+                for i, result in enumerate(search_results[:results_to_process]):
+                    logger.info(f"Processing article {total_collected + 1}/{max_searches}: {result['title']}")
                     await self.add_delay()
                     article_content = await self.scrape_article_content(result['url'])
                     if not article_content:
                         logger.warning(f"No content found for article: {result['title']}")
                         continue
 
-                    # Pass spell correction parameters to the organize_article function
+                    # Add article processing code here
                     metadata = organize_article(
                         article_text=article_content,
                         url=result['url'],
@@ -321,8 +330,15 @@ class NewspaperScraper:
                     )
 
                     all_results.append(metadata)
+                    total_collected += 1
 
-                if page < max_pages:
+                    # Check if we've reached the maximum
+                    if total_collected >= max_searches:
+                        break
+
+                # Go to next page if we need more results
+                if total_collected < max_searches:
+                    page += 1
                     await self.add_delay()
 
             return all_results
