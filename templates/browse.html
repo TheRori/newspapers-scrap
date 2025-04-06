@@ -214,10 +214,20 @@
                 <input type="number" id="max_words" name="max_words" value="{{ max_words }}" placeholder="Max"
                        min="0">
             </div>
+            <div class="filter-group">
+                <label for="canton">Canton:</label>
+                <input type="text" id="canton" name="canton" value="{{ canton }}" placeholder="Filter by canton">
+            </div>
+            <div class="filter-group">
+                <label for="newspaper">Newspaper:</label>
+                <input type="text" id="newspaper" name="newspaper" value="{{ newspaper }}"
+                       placeholder="Filter by newspaper">
+            </div>
             <div class="filter-actions">
                 <button type="submit" class="filter-btn">Apply Filters</button>
                 <a href="{{ url_for('browse_topics') }}" class="clear-btn">Clear All</a>
             </div>
+
         </form>
     </div>
     {% if filter_word or date_from or date_to or min_words or max_words %}
@@ -237,6 +247,12 @@
         {% endif %}
         {% if max_words %}
         <span class="filter-tag">Max words: {{ max_words }}</span>
+        {% endif %}
+        {% if canton %}
+        <span class="filter-tag">Canton: {{ canton }}</span>
+        {% endif %}
+        {% if newspaper %}
+        <span class="filter-tag">Newspaper: {{ newspaper }}</span>
         {% endif %}
     </div>
     {% endif %}
@@ -279,12 +295,14 @@
             {% if topic.has_more %}
             <div class="show-more">
                 <a href="{{ url_for('topic_results',
-                     topic_name=topic.name,
-                     filter_word=filter_word,
-                     date_from=date_from,
-                     date_to=date_to,
-                     min_words=min_words,
-                     max_words=max_words) }}"
+         topic_name=topic.name,
+         filter_word=filter_word,
+         date_from=date_from,
+         date_to=date_to,
+         min_words=min_words,
+         max_words=max_words,
+         canton=canton,
+         newspaper=newspaper) }}"
                    class="show-more-link">
                     Show all {{ topic.total_files }} articles
                 </a>

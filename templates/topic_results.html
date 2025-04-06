@@ -185,6 +185,15 @@
                 <span>to</span>
                 <input type="number" id="max_words" name="max_words" value="{{ max_words }}" placeholder="Max" min="0">
             </div>
+            <div class="filter-group">
+                <label for="canton">Canton:</label>
+                <input type="text" id="canton" name="canton" value="{{ canton }}" placeholder="Filter by canton">
+            </div>
+            <div class="filter-group">
+                <label for="newspaper">Newspaper:</label>
+                <input type="text" id="newspaper" name="newspaper" value="{{ newspaper }}"
+                       placeholder="Filter by newspaper">
+            </div>
             <div class="filter-actions">
                 <button type="submit" class="filter-btn">Apply Filters</button>
                 <a href="{{ url_for('topic_results', topic_name=topic_name) }}" class="clear-btn">Clear All</a>
@@ -209,6 +218,12 @@
         {% endif %}
         {% if max_words %}
         <span class="filter-tag">Max words: {{ max_words }}</span>
+        {% endif %}
+        {% if canton %}
+        <span class="filter-tag">Canton: {{ canton }}</span>
+        {% endif %}
+        {% if newspaper %}
+        <span class="filter-tag">Newspaper: {{ newspaper }}</span>
         {% endif %}
     </div>
     {% endif %}

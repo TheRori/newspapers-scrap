@@ -116,6 +116,8 @@ def browse_topics():
     filter_word = request.args.get('filter_word', '').strip().lower()
     filter_date_from = request.args.get('date_from', '')
     filter_date_to = request.args.get('date_to', '')
+    filter_canton = request.args.get('canton', '').strip()
+    filter_newspaper = request.args.get('newspaper', '').strip().lower()
 
     # Get word count filter parameters
     min_words = request.args.get('min_words', '')
@@ -177,6 +179,18 @@ def browse_topics():
                                 if max_words is not None and word_count > max_words:
                                     include_file = False
 
+                            # Canton filter
+                            if include_file and filter_canton:
+                                article_canton = file_data.get('canton', '')
+                                if not article_canton or filter_canton.lower() != article_canton.lower():
+                                    include_file = False
+
+                            # Newspaper filter
+                            if include_file and filter_newspaper:
+                                article_newspaper = file_data.get('newspaper', '').lower()
+                                if not article_newspaper or filter_newspaper not in article_newspaper:
+                                    include_file = False
+
                             if include_file:
                                 file_info = {
                                     'filename': file,
@@ -217,6 +231,8 @@ def browse_topics():
         date_to=filter_date_to,
         min_words=min_words or '',
         max_words=max_words or '',
+        canton=filter_canton,
+        newspaper=filter_newspaper,
         limit_per_topic=limit_per_topic
     )
 
@@ -230,6 +246,8 @@ def topic_results(topic_name):
     filter_word = request.args.get('filter_word', '').strip().lower()
     filter_date_from = request.args.get('date_from', '')
     filter_date_to = request.args.get('date_to', '')
+    filter_canton = request.args.get('canton', '').strip()
+    filter_newspaper = request.args.get('newspaper', '').strip().lower()
     min_words = request.args.get('min_words', '')
     max_words = request.args.get('max_words', '')
 
@@ -275,6 +293,18 @@ def topic_results(topic_name):
                         if max_words is not None and word_count > max_words:
                             include_file = False
 
+                    # Canton filter
+                    if include_file and filter_canton:
+                        article_canton = file_data.get('canton', '')
+                        if not article_canton or filter_canton.lower() != article_canton.lower():
+                            include_file = False
+
+                    # Newspaper filter
+                    if include_file and filter_newspaper:
+                        article_newspaper = file_data.get('newspaper', '').lower()
+                        if not article_newspaper or filter_newspaper not in article_newspaper:
+                            include_file = False
+
                     if include_file:
                         file_info = {
                             'filename': file,
@@ -304,6 +334,8 @@ def topic_results(topic_name):
         date_to=filter_date_to,
         min_words=min_words or '',
         max_words=max_words or '',
+        canton=filter_canton,
+        newspaper=filter_newspaper,
         total_files=len(files)
     )
 
@@ -531,36 +563,76 @@ def index():
 @app.route('/api/search', methods=['POST'])
 def search():
     data = request.json
-    cmd = [sys.executable, 'scripts/run_search.py', data['query']]
+    search_tasks = []  # List to store multiple search tasks
 
+    # Base command with common parameters
+    base_cmd = [sys.executable, 'scripts/run_search.py', data['query']]
+
+    # Add common parameters
     if data.get('newspapers'):
-        cmd.extend(['--newspapers'] + data['newspapers'].split())
+        base_cmd.extend(['--newspapers'] + data['newspapers'].split())
     if data.get('cantons'):
-        cmd.extend(['--cantons'] + data['cantons'].split())
-
+        base_cmd.extend(['--cantons'] + data['cantons'].split())
     if data.get('searches') and data.get('searches') != 'all':
-        cmd.extend(['--max_articles', str(data['searches'])])
+        base_cmd.extend(['--max_articles', str(data['searches'])])
 
+    # Add correction parameters
+    correction_method = data.get('correction_method', 'none')
+    if correction_method and correction_method != 'none':
+        base_cmd.extend(['--correction', correction_method])
+        language = data.get('language', 'fr')
+        base_cmd.extend(['--language', language])
+    else:
+        base_cmd.extend(['--no-correction'])
+
+    # Handle different search strategies
     search_by = data.get('search_by', 'year')
     if search_by == 'year':
         start_year = data.get('start_year')
         end_year = data.get('end_year')
+
         if start_year and end_year:
-            cmd.extend(['--date_range', f"{start_year}-{end_year}"])
+            start_year = int(start_year)
+            end_year = int(end_year)
+
+            # Split the search into decades and individual years
+            current_decade_start = start_year - (start_year % 10)
+
+            # Process each decade
+            while current_decade_start < end_year:
+                decade_end = min(current_decade_start + 9, end_year)
+
+                # If this decade is fully within our range, search it as a decade
+                if current_decade_start >= start_year and decade_end <= end_year:
+                    decade_cmd = base_cmd.copy()
+                    decade_cmd.extend(['--date_range', f"{current_decade_start}-{decade_end}"])
+                    search_tasks.append(decade_cmd)
+                # Otherwise, search year by year for partial decades
+                else:
+                    for year in range(max(current_decade_start, start_year), min(decade_end + 1, end_year + 1)):
+                        year_cmd = base_cmd.copy()
+                        year_cmd.extend(['--date_range', f"{year}-{year}"])
+                        search_tasks.append(year_cmd)
+
+                current_decade_start += 10
     elif search_by == 'decade':
         decade = data.get('decade')
         if decade:
+            cmd = base_cmd.copy()
             cmd.extend(['--decade', decade])
+            search_tasks.append(cmd)
     elif search_by == 'all_time':
+        cmd = base_cmd.copy()
         cmd.extend(['--all_time'])
+        search_tasks.append(cmd)
 
-    correction_method = data.get('correction_method', 'none')
-    if correction_method and correction_method != 'none':
-        cmd.extend(['--correction', correction_method])
-        language = data.get('language', 'fr')
-        cmd.extend(['--language', language])
-    else:
-        cmd.extend(['--no-correction'])
+    # If no tasks were created (due to missing parameters), use a default
+    if not search_tasks:
+        search_tasks.append(base_cmd)
+
+    # Only run the first task for now
+    # In a future implementation, you could run them sequentially or in parallel
+    cmd = search_tasks[0]
 
     process = subprocess.Popen(
         cmd,
@@ -597,7 +669,7 @@ def search():
                 continue
 
     socketio.start_background_task(emit_output)
-    return jsonify({'status': 'started'})
+    return jsonify({'status': 'started', 'tasks_count': len(search_tasks)})
 
 
 def get_article_versions(base_id):
