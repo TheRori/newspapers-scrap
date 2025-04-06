@@ -580,8 +580,6 @@ def search():
     correction_method = data.get('correction_method', 'none')
     if correction_method and correction_method != 'none':
         base_cmd.extend(['--correction', correction_method])
-        language = data.get('language', 'fr')
-        base_cmd.extend(['--language', language])
     else:
         base_cmd.extend(['--no-correction'])
 
