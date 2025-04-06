@@ -21,7 +21,6 @@ def organize_article(
         canton: Optional[str] = None,
         apply_spell_correction: bool = True,
         correction_method: str = 'mistral',
-        language: str = 'fr'
 ) -> Dict:
     """
     Organize an article into the data structure and return its metadata
@@ -36,7 +35,6 @@ def organize_article(
         canton: Optional canton information
         apply_spell_correction: Whether to apply spell correction
         correction_method: Which spell correction method to use ('mistral' or 'symspell')
-        language: The language of the article
     """
     import unicodedata
     import tempfile
@@ -76,9 +74,9 @@ def organize_article(
                 os.unlink(temp_out_path)
 
             elif correction_method.lower() == 'symspell':
-                logger.info(f"Using SymSpell for spell correction (language: {language})")
+                logger.info(f"Using SymSpell for spell correction (language: fr)")
                 from newspapers_scrap.data_manager.ocr_cleaner.symspell_checker import SpellCorrector
-                spell_corrector = SpellCorrector(language=language)
+                spell_corrector = SpellCorrector(language='fr')
                 logger.info("SymSpell corrector initialized, starting correction")
                 corrected_text = spell_corrector.correct_text_sym(article_text)
                 logger.info(f"SymSpell correction complete ({len(corrected_text)} characters)")
@@ -104,12 +102,12 @@ def organize_article(
         has_corrections = False
         correction_method = "none"  # Explicitly mark as no correction
 
-        # Parse the date with the robust parser
     current_date = datetime.now()
+
     parsed_date = clean_and_parse_date(date_str, default_date=current_date)
 
     if parsed_date == current_date and date_str:
-        logger.warning(f"Could not parse date '{date_str}', using current date")
+        logger.warning(f"Could not reliably parse date '{date_str}', using current date as fallback.")
 
     # Format the date for storage
     formatted_date = parsed_date.strftime('%Y-%m-%d')
@@ -126,8 +124,7 @@ def organize_article(
 
     # Add versioning: base ID + correction method + language if not "none"
     version_suffix = f"_{correction_method}"
-    if correction_method != "none" and language != "fr":
-        version_suffix += f"_{language}"
+
 
     article_id = f"{base_article_id}{version_suffix}"
 
@@ -172,7 +169,6 @@ def organize_article(
                 existing_versions.append({
                     "id": version_data["id"],
                     "correction_method": version_data["correction_method"],
-                    "language": version_data["language"],
                     "path": vf
                 })
         except (json.JSONDecodeError, KeyError) as e:
@@ -192,7 +188,6 @@ def organize_article(
         "original_content": article_text,
         "spell_corrected": has_corrections,
         "correction_method": correction_method,
-        "language": language,
         "word_count": len(corrected_text.split()),
         "canton": canton,
         "created_at": datetime.now().isoformat(),

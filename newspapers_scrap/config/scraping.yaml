@@ -6,4 +6,4 @@ REQUEST:
 LIMITS:
   request_delay_min: 1.0
   request_delay_max: 3.0
-  max_results_per_search: 40
+  max_results_per_search: 500

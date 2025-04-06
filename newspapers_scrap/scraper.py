@@ -1,6 +1,11 @@
 # newspapers_scrap/scraper.py
+import re
+
 import logging_config
 import logging
+
+from newspapers_scrap.performance_tracker import PerformanceTracker
+from newspapers_scrap.utils import clean_and_parse_date
 
 logger = logging.getLogger(__name__)
 import os
@@ -22,8 +27,7 @@ from newspapers_scrap.security import UserAgentManager, ProxyManager, BrowserFin
 class NewspaperScraper:
     """Base scraper for newspaper websites"""
 
-    def __init__(self, newspaper_key=None, config=None, apply_spell_correction=False, correction_method=None,
-                 language='fr'):
+    def __init__(self, newspaper_key=None, config=None, apply_spell_correction=False, correction_method=None):
         self.config = config or env
         key = newspaper_key or 'e_newspaper_archives'
         self.newspaper_config = self.config.selectors.newspapers.e_newspaper_archives
@@ -42,7 +46,7 @@ class NewspaperScraper:
         self.current_fingerprint = None
         self.apply_spell_correction = apply_spell_correction
         self.correction_method = correction_method
-        self.language = language
+        self.performance_tracker = PerformanceTracker()
 
     async def _init_playwright(self):
         """Initialize Playwright with standard browser"""
@@ -166,7 +170,7 @@ class NewspaperScraper:
                     return None
 
     async def search(self, query: str, page: int = 1, newspapers: List[str] = None,
-                     cantons: List[str] = None, deq: int = None, yeq: int = None) -> List[Dict[str, Any]]:
+                     cantons: List[str] = None, decade: str = None, year: str = None) -> Dict[str, Any]:
         """
         Search for articles and extract results from specified newspapers and cantons
 
@@ -175,15 +179,19 @@ class NewspaperScraper:
             page: The page number for pagination
             newspapers: List of newspaper codes to restrict the search to
             cantons: List of canton codes to restrict the search to
-            deq: Filter by decade (e.g., 197 for 1970-1979, 200 for 2000-2009)
-            yeq: Filter by specific year (e.g., 1972, 2002)
+            decade: Decade to search (e.g., "197" for 1970s)
+            year: Specific year to search (e.g., "1975")
+
+        Returns:
+            Dictionary containing articles and total_results count
         """
         search_params = self.config.urls.search.params
         params = {
             'a': search_params.a,
             'hs': search_params.hs,
             'results': search_params.results,
-            'txq': query
+            'txq': query,
+            'l': 'de'
         }
 
         # Calculate the starting result index for pagination
@@ -199,21 +207,55 @@ class NewspaperScraper:
         if cantons:
             params['ccq'] = ','.join(cantons)
 
-        # Add decade filter if specified
-        if deq is not None:
-            params['deq'] = str(deq)
+        # Add decade filter if specified (e.g., '197' for 1970s)
+        if decade:
+            params['deq'] = decade
 
-        # Add year filter if specified
-        if yeq is not None:
-            params['yeq'] = str(yeq)
+        # Add year filter if specified (e.g., '1975')
+        if year:
+            params['yeq'] = year
 
         query_string = '&'.join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items()])
         search_url = f"{self.base_url}/?{query_string}"
         logger.info(f"Searching with URL: {search_url}")
         soup = await self.get_page(search_url)
         if not soup:
-            return []
-        return self._extract_search_results(soup)
+            return {"articles": [], "total_results": 0}
+
+        # Extract search results and total count
+        articles = self._extract_search_results(soup)
+        total_results = self._extract_total_results(soup)
+
+        return {
+            "articles": articles,
+            "total_results": total_results
+        }
+
+    def _extract_total_results(self, soup: BeautifulSoup) -> int:
+        """Extract the total number of results from the search results header"""
+        try:
+            # Look for the search results header
+            header = soup.select_one('#searchresultsheader')
+            if header:
+                summary = header.select_one('#searchresultssummary')
+                if summary:
+                    # Parse text like "Ergebnisse 41 - 60 von 271 für Apple"
+                    summary_text = summary.text.strip()
+                    logger.debug(f"Extracted summary text: {summary_text}")
+                    # Find the number after "von" and before "für"
+                    match = re.search(r'von\s+([0-9,\.]+)\s+f[üu�]r', summary_text)
+                    if match:
+                        num_str = match.group(1).replace(',', '').replace('.', '')
+                        return int(num_str)
+            # If we can't find it or parse it, check if there are any results
+            result_items = soup.select(self.config.selectors.search_selectors.result_item)
+            if result_items:
+                return len(result_items)  # Return at least the count of current results
+
+            return 0
+        except Exception as e:
+            logger.warning(f"Could not extract total results count: {e}")
+            return 0
 
     def _extract_search_results(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
         """Extract search results from the soup object"""
@@ -241,6 +283,27 @@ class NewspaperScraper:
                 "date": date
             })
         return results
+
+    @staticmethod
+    def parse_article_date(date_str):
+        """
+        Parse date strings from article metadata into datetime objects.
+
+        Args:
+            date_str: String containing date information
+
+        Returns:
+            Parsed date in YYYY-MM-DD format or None if parsing fails
+        """
+        try:
+            # Use the existing clean_and_parse_date utility function
+            parsed_date = clean_and_parse_date(date_str)
+            if parsed_date:
+                return parsed_date.strftime('%Y-%m-%d')
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to parse date '{date_str}': {e}")
+            return None
 
     async def scrape_article_content(self, url: str) -> str:
         """Extract the full article text content from a newspaper article page"""
@@ -270,79 +333,121 @@ class NewspaperScraper:
     from newspapers_scrap.data_manager.organizer import organize_article
 
     async def save_articles_from_search(self, query: str, output_dir: str = None,
-                                        max_searches: int = 1, newspapers: List[str] = None,
-                                        cantons: List[str] = None, deq: int = None,
-                                        yeq: int = None) -> List[Dict[str, Any]]:
+                                        max_articles: int = None, newspapers: List[str] = None,
+                                        cantons: List[str] = None, decade: str = None,
+                                        year: str = None) -> List[Dict[str, Any]]:
         """
         Search for articles, extract their content, and save using the organizer
 
         Args:
             query: The search query text
             output_dir: Directory to save the articles (override default location)
-            max_searches: Maximum searches to perform
+            max_articles: Maximum articles to process (None = process all found)
             newspapers: List of newspaper codes to restrict the search to
             cantons: List of canton codes to restrict the search to
-            deq: Filter by decade (e.g., 197 for 1970-1979, 200 for 2000-2009)
-            yeq: Filter by specific year (e.g., 1972, 2002)
+            decade: Decade to search (e.g., "197" for 1970s)
+            year: Specific year to search (e.g., "1975")
 
         Returns:
             List of article metadata
         """
         try:
+            self.performance_tracker.start_tracking()  # Start tracking
             all_results = []
-            max_results = min(max_searches, self.config.scraping.limits.max_results_per_search)
+            config_max = self.config.scraping.limits.max_results_per_search
 
-            total_collected = 0
+            # Get first page of results to determine total count
             page = 1
 
-            while total_collected < max_searches:
-                logger.info(f"Processing search results page {page} for query '{query}'")
-                search_results = await self.search(query, page, newspapers, cantons, deq, yeq)
+            # Create a copy of the search parameters
+            search_params = {
+                'query': query,
+                'page': page,
+                'newspapers': newspapers,
+                'cantons': cantons
+            }
 
-                if not search_results:
-                    logger.info(f"No results found on page {page}. Stopping pagination.")
-                    break
+            # Add decade or year filter if specified
+            if decade:
+                search_params['decade'] = decade
+            if year:
+                search_params['year'] = year
 
-                # Calculate how many results to take from this page
-                remaining = max_searches - total_collected
-                results_to_process = min(len(search_results), remaining)
+            search_result = await self.search(**search_params)
+            total_results = search_result["total_results"]
+            articles = search_result["articles"]
 
-                for i, result in enumerate(search_results[:results_to_process]):
-                    logger.info(f"Processing article {total_collected + 1}/{max_searches}: {result['title']}")
-                    await self.add_delay()
-                    article_content = await self.scrape_article_content(result['url'])
-                    if not article_content:
-                        logger.warning(f"No content found for article: {result['title']}")
-                        continue
+            # If no results found, return empty list
+            if total_results == 0:
+                logger.info(f"No results found for query '{query}'")
+                return []
 
-                    # Add article processing code here
-                    metadata = organize_article(
-                        article_text=article_content,
-                        url=result['url'],
-                        search_term=query,
-                        article_title=result['title'],
-                        newspaper_name=result.get('newspaper', 'Unknown'),
-                        date_str=result.get('date', ''),
-                        canton=cantons[0] if cantons else None,
-                        apply_spell_correction=self.apply_spell_correction,
-                        correction_method=self.correction_method,
-                        language=self.language
-                    )
+            # Determine max articles to process
+            if max_articles is None:
+                # Use config limit if no specific limit is provided
+                max_articles = min(total_results, config_max)
+            else:
+                # Honor user-specified limit, but cap at total available
+                max_articles = min(max_articles, total_results)
 
-                    all_results.append(metadata)
-                    total_collected += 1
+            logger.info(f"Found {total_results} total results for query '{query}', processing up to {max_articles}")
 
-                    # Check if we've reached the maximum
-                    if total_collected >= max_searches:
-                        break
+            # Process articles
+            total_collected = 0
 
-                # Go to next page if we need more results
-                if total_collected < max_searches:
+            while total_collected < max_articles:
+                if not articles:
+                    # If no more articles on current page, go to next page
                     page += 1
                     await self.add_delay()
 
+                    # Update page number in search parameters
+                    search_params['page'] = page
+                    search_result = await self.search(**search_params)
+                    articles = search_result["articles"]
+
+                    if not articles:
+                        logger.info(f"No more results found on page {page}. Stopping pagination.")
+                        break
+
+                # Get the next article to process
+                article = articles.pop(0)
+
+                logger.info(f"Processing article {total_collected + 1}/{max_articles}: {article['title']}")
+                await self.add_delay()
+                article_content = await self.scrape_article_content(article['url'])
+
+                if not article_content:
+                    logger.warning(f"No content found for article: {article['title']}")
+                    continue
+
+                # Process and save the article
+                metadata = organize_article(
+                    article_text=article_content,
+                    url=article['url'],
+                    search_term=query,
+                    article_title=article['title'],
+                    newspaper_name=article.get('newspaper', 'Unknown'),
+                    date_str=article.get('date', ''),
+                    canton=cantons[0] if cantons else None,
+                    apply_spell_correction=self.apply_spell_correction,
+                    correction_method=self.correction_method,
+                )
+
+                self.performance_tracker.track_article(article.get('date', ''))  # Track the article date
+
+                all_results.append(metadata)
+                total_collected += 1
+
+                # Check if we've reached the maximum
+                if total_collected >= max_articles:
+                    break
+
             return all_results
         finally:
+            self.performance_tracker.stop_tracking()  # Stop tracking
+            summary = self.performance_tracker.generate_summary()  # Generate summary
+            logger.info(f"Scraping summary: {summary}")
             # Always ensure browser and playwright are closed
             await self._close_playwright()
 
@@ -360,9 +465,8 @@ class NewspaperScraper:
         """Add smart delay between requests to be respectful"""
         await smart_delay(self.delay_min, self.delay_max)
 
-    def save_articles_sync(self, query: str, output_dir: str = None, max_pages: int = 1,
-                           newspapers: List[str] = None, cantons: List[str] = None,
-                           deq: int = None, yeq: int = None):
+    def save_articles_sync(self, query: str, output_dir: str = None, max_articles: int = None,
+                           newspapers: List[str] = None, cantons: List[str] = None):
         """Synchronous wrapper for the async save_articles_from_search method"""
-        return asyncio.run(self.save_articles_from_search(query, output_dir, max_pages,
-                                                          newspapers, cantons, deq, yeq))
+        return asyncio.run(self.save_articles_from_search(query, output_dir, max_articles,
+                                                          newspapers, cantons))

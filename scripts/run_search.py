@@ -1,6 +1,7 @@
 import logging_config
 import logging
 import sys
+
 logger = logging.getLogger(__name__)
 # Ajouter un handler stdout s'il n'y en a pas
 if not logger.handlers:
@@ -20,31 +21,28 @@ from newspapers_scrap.config.config import env
 from newspapers_scrap.security import ProxyManager
 
 
-
-
 async def async_main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Search for newspaper articles')
     parser.add_argument('query', help='Search query text')
-    parser.add_argument('--newspapers', type=str, nargs='+', help='Newspaper codes to search (e.g., LLE for La Liberté)')
+    parser.add_argument('--newspapers', type=str, nargs='+', help='Newspaper codes to search')
     parser.add_argument('--output', type=str, help='Output directory to save articles', default=None)
-    parser.add_argument('--sch', type=int, help='Maximum searches', default=1)
-    parser.add_argument('--proxies', type=str, default=None, help='Path to JSON file containing proxy configurations')
-    parser.add_argument('--cantons', type=str, nargs='+', help='Canton codes to search (e.g., GE for Geneva)')
-    parser.add_argument('--deq', type=str, help='Filter by decade (e.g., 197 for 1970-1979, 200 for 2000-2009)')
-    parser.add_argument('--yeq', type=str, help='Filter by specific year (e.g., 1972, 2002)')
+    parser.add_argument('--max_articles', type=int, help='Maximum articles to retrieve', default=None)
+    parser.add_argument('--proxies', type=str, default=None, help='Path to JSON file with proxy configurations')
+    parser.add_argument('--cantons', type=str, nargs='+', help='Canton codes to search')
+    parser.add_argument('--date_range', type=str, help='Date range in format YYYY-YYYY')
+    parser.add_argument('--search_by', choices=['year', 'decade'], default='year',
+                        help='Search by year or decade')
     parser.add_argument('--correction', type=str, choices=['mistral', 'symspell'],
-                        help='Spell correction method to use (mistral or symspell)')
-    parser.add_argument('--language', type=str, default='fr',
-                        choices=['fr', 'de', 'en', 'it'],
-                        help='Language for spell correction')
+                        help='Spell correction method to use')
     parser.add_argument('--no-correction', action='store_true',
                         help='Disable spell correction')
+    parser.add_argument('--all_time', action='store_true', help='Search all time')
 
     args = parser.parse_args()
-
     logger.debug('Searching for newspaper articles')
 
+    # Initialize proxy manager if needed
     proxy_manager = None
     if args.proxies:
         import json
@@ -58,26 +56,144 @@ async def async_main():
 
     # Track timing
     start_time = time.time()
+    results = []
 
-    # Create scraper instance with the new config
-    correction_settings = {
-        'apply_spell_correction': not args.no_correction,
-        'correction_method': args.correction if args.correction else None,
-        'language': args.language
-    }
+    try:
+        if args.all_time:
+            # Search without date filtering
+            logger.info("Searching all time")
+            try:
+                scraper = NewspaperScraper(
+                    apply_spell_correction=not args.no_correction,
+                    correction_method=args.correction,
+                )
 
-    scraper = NewspaperScraper(config=env, **correction_settings)
+                results = await scraper.save_articles_from_search(
+                    query=args.query,
+                    output_dir=args.output,
+                    max_articles=args.max_articles,
+                    newspapers=args.newspapers,
+                    cantons=args.cantons
+                )
+            except Exception as e:
+                logger.error(f"Error in search: {e}")
+            finally:
+                # Ensure resources are properly closed
+                try:
+                    if scraper:
+                        await scraper._close_playwright()
+                except Exception as e:
+                    logger.error(f"Error closing scraper: {e}")
+        else:
+            # Process date range
+            if args.date_range:
+                try:
+                    start_year, end_year = map(int, args.date_range.split('-'))
 
-    # Search for articles and save them
-    results = await scraper.save_articles_from_search(
-        query=args.query,
-        output_dir=args.output,
-        max_searches=args.sch,
-        newspapers=args.newspapers,
-        cantons=args.cantons,
-        deq=args.deq,
-        yeq=args.yeq
-    )
+                    # Ensure start_year <= end_year
+                    if start_year > end_year:
+                        start_year, end_year = end_year, start_year
+
+                    logger.info(f"Searching for years from {start_year} to {end_year}")
+
+                    if args.search_by == 'decade':
+                        # Search by decades
+                        logger.info("Using decade-based search")
+                        for decade_start in range(start_year // 10 * 10, end_year + 1, 10):
+                            decade = str(decade_start)[:3]  # Format: "197" for 1970s
+                            decade_end = min(decade_start + 9, end_year)
+                            logger.info(f"Searching decade {decade}0s ({decade_start}-{decade_end})")
+
+                            try:
+                                scraper = NewspaperScraper(
+                                    apply_spell_correction=not args.no_correction,
+                                    correction_method=args.correction,
+                                )
+
+                                # Search for the entire decade
+                                decade_results = await scraper.save_articles_from_search(
+                                    query=args.query,
+                                    output_dir=args.output,
+                                    max_articles=args.max_articles,
+                                    newspapers=args.newspapers,
+                                    cantons=args.cantons,
+                                    decade=decade
+                                )
+
+                                if decade_results:
+                                    results.extend(decade_results)
+                            except Exception as e:
+                                logger.error(f"Error searching decade {decade}0s: {e}")
+                            finally:
+                                # Ensure resources are properly closed even if an error occurs
+                                try:
+                                    if scraper:
+                                        await scraper._close_playwright()
+                                except Exception as e:
+                                    logger.error(f"Error closing scraper: {e}")
+                    else:
+                        # Search by individual years
+                        logger.info("Using year-based search")
+                        for year in range(start_year, end_year + 1):
+                            logger.info(f"Searching year {year}")
+
+                            try:
+                                scraper = NewspaperScraper(
+                                    apply_spell_correction=not args.no_correction,
+                                    correction_method=args.correction,
+                                )
+
+                                # Search for a specific year
+                                year_results = await scraper.save_articles_from_search(
+                                    query=args.query,
+                                    output_dir=args.output,
+                                    max_articles=args.max_articles,
+                                    newspapers=args.newspapers,
+                                    cantons=args.cantons,
+                                    year=str(year)
+                                )
+
+                                if year_results:
+                                    results.extend(year_results)
+                            except Exception as e:
+                                logger.error(f"Error searching year {year}: {e}")
+                            finally:
+                                # Ensure resources are properly closed even if an error occurs
+                                try:
+                                    if scraper:
+                                        await scraper._close_playwright()
+                                except Exception as e:
+                                    logger.error(f"Error closing scraper: {e}")
+                except ValueError:
+                    logger.error(f"Invalid date range format: {args.date_range}. Expected YYYY-YYYY")
+                    return
+            else:
+                # Standard search without date filtering
+                try:
+                    scraper = NewspaperScraper(
+                        apply_spell_correction=not args.no_correction,
+                        correction_method=args.correction,
+                    )
+
+                    results = await scraper.save_articles_from_search(
+                        query=args.query,
+                        output_dir=args.output,
+                        max_articles=args.max_articles,
+                        newspapers=args.newspapers,
+                        cantons=args.cantons
+                    )
+                except Exception as e:
+                    logger.error(f"Error in search: {e}")
+                finally:
+                    # Ensure resources are properly closed
+                    try:
+                        if scraper:
+                            await scraper._close_playwright()
+                    except Exception as e:
+                        logger.error(f"Error closing scraper: {e}")
+
+    except Exception as e:
+        logger.error(f"Unhandled exception during search: {e}")
 
     # Print summary
     duration = time.time() - start_time
@@ -85,6 +201,7 @@ async def async_main():
 
 def main():
     asyncio.run(async_main())
+
 
 if __name__ == "__main__":
     main()

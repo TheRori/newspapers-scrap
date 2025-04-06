@@ -28,6 +28,7 @@ def stream_process(process, queue):
     article_found_pattern = re.compile(r'Processing article (\d+)/(\d+)')
     total_pattern = re.compile(r'Processing complete\. (\d+) articles processed')
     processed_pattern = re.compile(r'Version saved to: (.*?)\.json')
+    results_found_pattern = re.compile(r'Found (\d+) total results for query .*, processing up to (\d+)')
 
     try:
         for line in iter(process.stdout.readline, ''):
@@ -39,6 +40,19 @@ def stream_process(process, queue):
             except UnicodeEncodeError:
                 print(line.encode('utf-8', errors='replace').decode('ascii',
                                                                     errors='replace'))  # Safely encode problematic characters
+
+            # Check if line contains information about total results found
+            results_found_match = results_found_pattern.search(line)
+            if results_found_match:
+                total_results = int(results_found_match.group(1))
+                max_articles = int(results_found_match.group(2))
+                queue.put(f"Found {total_results} total results, processing up to {max_articles}")
+
+                # Emit results count information
+                socketio.emit('results_count', {
+                    'total': total_results,
+                    'max_articles': max_articles
+                })
 
             # When an article is saved, extract path and add to queue
             processed_match = processed_pattern.search(line)
@@ -517,73 +531,65 @@ def index():
 @app.route('/api/search', methods=['POST'])
 def search():
     data = request.json
-
-    logger.debug(f"Received search request: {data}")
-
-    # Build command arguments
     cmd = [sys.executable, 'scripts/run_search.py', data['query']]
 
     if data.get('newspapers'):
         cmd.extend(['--newspapers'] + data['newspapers'].split())
     if data.get('cantons'):
         cmd.extend(['--cantons'] + data['cantons'].split())
-    if data.get('searches'):
-        cmd.extend(['--sch', str(data['searches'])])
-    if data.get('deq'):
-        cmd.extend(['--deq', data['deq']])
-    if data.get('yeq'):
-        cmd.extend(['--yeq', data['yeq']])
 
-    # Add spell correction parameters
+    if data.get('searches') and data.get('searches') != 'all':
+        cmd.extend(['--max_articles', str(data['searches'])])
+
+    search_by = data.get('search_by', 'year')
+    if search_by == 'year':
+        start_year = data.get('start_year')
+        end_year = data.get('end_year')
+        if start_year and end_year:
+            cmd.extend(['--date_range', f"{start_year}-{end_year}"])
+    elif search_by == 'decade':
+        decade = data.get('decade')
+        if decade:
+            cmd.extend(['--decade', decade])
+    elif search_by == 'all_time':
+        cmd.extend(['--all_time'])
+
     correction_method = data.get('correction_method', 'none')
     if correction_method and correction_method != 'none':
         cmd.extend(['--correction', correction_method])
-        # Add language parameter if spell correction is enabled
         language = data.get('language', 'fr')
         cmd.extend(['--language', language])
     else:
-        cmd.extend(['--no-correction'])  # Explicitly disable correction
+        cmd.extend(['--no-correction'])
 
-    logger.info(f"Running command: {' '.join(cmd)}")
-
-    # Create process with non-buffered output
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        bufsize=1,  # Line buffered
+        bufsize=1,
         universal_newlines=True,
         encoding='utf-8',
         errors='replace'
     )
 
-    # Create queue for output
     output_queue = Queue()
-
-    # Start thread to read output
     thread = Thread(target=stream_process, args=(process, output_queue))
     thread.daemon = True
     thread.start()
 
     def emit_output():
         while True:
-            # Check if process is still running
             if process.poll() is not None and output_queue.empty():
-                logger.info("Process completed, emitting search_complete")
                 socketio.emit('search_complete', {'status': 'completed'})
-                socketio.sleep(0.1)  # Give some time for the last messages
+                socketio.sleep(0.1)
                 break
-
-            # Get output from queue
             try:
-                # Set a short timeout so we can check process status frequently
                 line = output_queue.get(timeout=0.1)
                 if line:
-                    logger.debug(f"Emitting log message: {line}")
                     socketio.emit('log_message', {'message': line})
-                    socketio.sleep(0)  # Yield to allow event to be sent immediately
+                    socketio.sleep(0)
             except Empty:
-                socketio.sleep(0.1)  # Small delay when no output to avoid CPU spinning
+                socketio.sleep(0.1)
                 continue
             except Exception as e:
                 logger.error(f"Error in emit_output: {str(e)}")
