@@ -46,48 +46,105 @@ class ScrapingReportGenerator:
         Returns:
             Path to the generated report directory
         """
-        # Create a timestamped directory for this report
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_name = f"scraping_report_{timestamp}"
-        if query:
-            # Clean query for filename
-            clean_query = "".join(c if c.isalnum() else "_" for c in query)
-            report_name = f"scraping_report_{clean_query}_{timestamp}"
-        
-        report_dir = self.output_dir / report_name
-        report_dir.mkdir(exist_ok=True)
-        
-        logger.info(f"Generating report in {report_dir}")
-        
-        # Save raw data as JSON
-        with open(report_dir / "performance_data.json", "w", encoding="utf-8") as f:
-            json.dump(performance_data, f, indent=2, ensure_ascii=False)
-        
-        # Generate individual charts
-        self._generate_time_distribution_chart(performance_data, report_dir)
-        self._generate_articles_by_year_chart(performance_data, report_dir)
-        self._generate_articles_by_newspaper_chart(performance_data, report_dir)
-        self._generate_articles_by_canton_chart(performance_data, report_dir)
-        self._generate_performance_metrics_chart(performance_data, report_dir)
-        
-        # Generate summary HTML
-        self._generate_html_report(performance_data, report_dir, query)
-        
-        logger.info(f"Report generation complete: {report_dir}")
-        return str(report_dir)
+        try:
+            # Create a timestamped directory for this report
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_name = f"scraping_report_{timestamp}"
+            if query:
+                # Clean query for filename
+                clean_query = "".join(c if c.isalnum() else "_" for c in query)
+                report_name = f"scraping_report_{clean_query}_{timestamp}"
+            
+            report_dir = self.output_dir / report_name
+            report_dir.mkdir(exist_ok=True)
+            
+            logger.info(f"Generating report in {report_dir}")
+            
+            # Save raw data as JSON
+            try:
+                with open(report_dir / "performance_data.json", "w", encoding="utf-8") as f:
+                    json.dump(performance_data, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"Error saving performance data as JSON: {e}")
+            
+            # Validate performance data structure
+            self._validate_performance_data(performance_data)
+            
+            # Generate individual charts
+            self._generate_time_distribution_chart(performance_data, report_dir)
+            self._generate_articles_by_year_chart(performance_data, report_dir)
+            self._generate_articles_by_newspaper_chart(performance_data, report_dir)
+            self._generate_articles_by_canton_chart(performance_data, report_dir)
+            self._generate_performance_metrics_chart(performance_data, report_dir)
+            
+            # Generate summary HTML
+            self._generate_html_report(performance_data, report_dir, query)
+            
+            logger.info(f"Report generation complete: {report_dir}")
+            return str(report_dir)
+        except Exception as e:
+            logger.error(f"Error generating report: {e}")
+            # Create a minimal error report
+            try:
+                error_report_dir = self.output_dir / f"error_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                error_report_dir.mkdir(exist_ok=True)
+                
+                with open(error_report_dir / "error.txt", "w", encoding="utf-8") as f:
+                    f.write(f"Error generating report: {str(e)}\n\n")
+                    f.write(f"Query: {query}\n\n")
+                    f.write("Performance data structure:\n")
+                    f.write(str(performance_data))
+                
+                # Create a simple HTML error page
+                with open(error_report_dir / "report.html", "w", encoding="utf-8") as f:
+                    f.write(f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>Erreur de génération de rapport</title>
+                        <style>
+                            body {{ font-family: Arial, sans-serif; padding: 20px; }}
+                            .error {{ color: red; background: #ffeeee; padding: 10px; border-radius: 5px; }}
+                        </style>
+                    </head>
+                    <body>
+                        <h1>Erreur lors de la génération du rapport</h1>
+                        <div class="error">
+                            <p><strong>Erreur:</strong> {str(e)}</p>
+                        </div>
+                        <p>Une erreur s'est produite lors de la génération du rapport. Veuillez vérifier les logs pour plus de détails.</p>
+                        <p><strong>Requête:</strong> {query or 'Non spécifiée'}</p>
+                        <p>Timestamp: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
+                    </body>
+                    </html>
+                    """)
+                
+                return str(error_report_dir)
+            except Exception as inner_e:
+                logger.error(f"Failed to create error report: {inner_e}")
+                return "Error generating report"
     
     def _generate_time_distribution_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing time distribution between different activities"""
         try:
             # Extract time data
-            request_time = data['request_stats']['total_time']
-            delay_time = data['delay_stats']['total_time']
-            processing_time = data['processing_stats']['total_time']
-            other_time = data['total_time'] - (request_time + delay_time + processing_time)
+            request_time = max(0, data['request_stats']['total_time'])
+            delay_time = max(0, data['delay_stats']['total_time'])
+            processing_time = max(0, data['processing_stats']['total_time'])
+            
+            # Ensure other_time is not negative
+            total_time = data['total_time']
+            tracked_time = request_time + delay_time + processing_time
+            other_time = max(0, total_time - tracked_time)
             
             # Create data for pie chart
             labels = ['Requêtes', 'Délais', 'Traitement', 'Autre']
             sizes = [request_time, delay_time, processing_time, other_time]
+            
+            # Ensure we have at least some data to show
+            if sum(sizes) <= 0:
+                logger.warning("No time data available for pie chart, using placeholder values")
+                sizes = [1, 1, 1, 1]  # Placeholder equal values
             
             # Create pie chart
             plt.figure(figsize=(10, 7))
@@ -110,6 +167,14 @@ class ScrapingReportGenerator:
             articles_by_year = data['articles_per_year']
             if not articles_by_year:
                 logger.warning("No article year data available for chart")
+                # Create a placeholder chart
+                plt.figure(figsize=(12, 6))
+                plt.text(0.5, 0.5, 'Aucune donnée disponible par année', 
+                         horizontalalignment='center', verticalalignment='center',
+                         fontsize=14)
+                plt.tight_layout()
+                plt.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
+                plt.close()
                 return
                 
             # Convert to DataFrame for easier plotting
@@ -132,6 +197,17 @@ class ScrapingReportGenerator:
             logger.info("Generated articles by year chart")
         except Exception as e:
             logger.error(f"Error generating articles by year chart: {e}")
+            # Create a fallback chart
+            try:
+                plt.figure(figsize=(12, 6))
+                plt.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
+                         horizontalalignment='center', verticalalignment='center',
+                         fontsize=14, color='red')
+                plt.tight_layout()
+                plt.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
+                plt.close()
+            except:
+                pass
     
     def _generate_articles_by_newspaper_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing articles by newspaper"""
@@ -139,6 +215,14 @@ class ScrapingReportGenerator:
             articles_by_newspaper = data['articles_per_newspaper']
             if not articles_by_newspaper:
                 logger.warning("No newspaper data available for chart")
+                # Create a placeholder chart
+                plt.figure(figsize=(12, 6))
+                plt.text(0.5, 0.5, 'Aucune donnée disponible par journal', 
+                         horizontalalignment='center', verticalalignment='center',
+                         fontsize=14)
+                plt.tight_layout()
+                plt.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
+                plt.close()
                 return
                 
             # Convert to DataFrame and sort by count
@@ -159,7 +243,9 @@ class ScrapingReportGenerator:
             
             # Add value labels
             for i, v in enumerate(df['Nombre d\'articles']):
-                ax.text(v + 0.1, i, str(v), va='center')
+                # Ensure we don't place text too far if value is very small
+                offset = max(0.1, v * 0.05) if v > 0 else 0.1
+                ax.text(v + offset, i, str(v), va='center')
             
             plt.tight_layout()
             plt.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
@@ -168,6 +254,17 @@ class ScrapingReportGenerator:
             logger.info("Generated articles by newspaper chart")
         except Exception as e:
             logger.error(f"Error generating articles by newspaper chart: {e}")
+            # Create a fallback chart
+            try:
+                plt.figure(figsize=(12, 6))
+                plt.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
+                         horizontalalignment='center', verticalalignment='center',
+                         fontsize=14, color='red')
+                plt.tight_layout()
+                plt.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
+                plt.close()
+            except:
+                pass
     
     def _generate_articles_by_canton_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing articles by canton"""
@@ -175,6 +272,14 @@ class ScrapingReportGenerator:
             articles_by_canton = data['articles_per_canton']
             if not articles_by_canton:
                 logger.warning("No canton data available for chart")
+                # Create a placeholder chart
+                plt.figure(figsize=(12, 6))
+                plt.text(0.5, 0.5, 'Aucune donnée disponible par canton', 
+                         horizontalalignment='center', verticalalignment='center',
+                         fontsize=14)
+                plt.tight_layout()
+                plt.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
+                plt.close()
                 return
                 
             # Convert to DataFrame and sort by count
@@ -188,7 +293,9 @@ class ScrapingReportGenerator:
             
             # Add value labels
             for i, v in enumerate(df['Nombre d\'articles']):
-                ax.text(v + 0.1, i, str(v), va='center')
+                # Ensure we don't place text too far if value is very small
+                offset = max(0.1, v * 0.05) if v > 0 else 0.1
+                ax.text(v + offset, i, str(v), va='center')
             
             plt.tight_layout()
             plt.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
@@ -197,17 +304,28 @@ class ScrapingReportGenerator:
             logger.info("Generated articles by canton chart")
         except Exception as e:
             logger.error(f"Error generating articles by canton chart: {e}")
+            # Create a fallback chart
+            try:
+                plt.figure(figsize=(12, 6))
+                plt.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
+                         horizontalalignment='center', verticalalignment='center',
+                         fontsize=14, color='red')
+                plt.tight_layout()
+                plt.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
+                plt.close()
+            except:
+                pass
     
     def _generate_performance_metrics_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing performance metrics"""
         try:
-            # Extract performance metrics
+            # Extract performance metrics with safe defaults
             metrics = {
-                'Articles par minute': data['performance_metrics']['articles_per_minute'],
-                'Taux de succès (%)': data['performance_metrics']['success_rate'],
-                'Temps moyen de requête (s)': data['request_stats']['average_time'],
-                'Temps moyen de traitement (s)': data['processing_stats']['average_time'],
-                'Temps moyen de délai (s)': data['delay_stats']['average_time']
+                'Articles par minute': max(0, data['performance_metrics']['articles_per_minute']),
+                'Taux de succès (%)': max(0, data['performance_metrics']['success_rate']),
+                'Temps moyen de requête (s)': max(0, data['request_stats']['average_time']),
+                'Temps moyen de traitement (s)': max(0, data['processing_stats']['average_time']),
+                'Temps moyen de délai (s)': max(0, data['delay_stats']['average_time'])
             }
             
             # Create DataFrame
@@ -220,7 +338,9 @@ class ScrapingReportGenerator:
             
             # Add value labels
             for i, v in enumerate(df['Valeur']):
-                ax.text(v + 0.1, i, f"{v:.2f}", va='center')
+                # Ensure we don't place text too far if value is very small
+                offset = max(0.1, v * 0.05) if v > 0 else 0.1
+                ax.text(v + offset, i, f"{v:.2f}", va='center')
             
             plt.tight_layout()
             plt.savefig(report_dir / "performance_metrics.png", dpi=300, bbox_inches='tight')
@@ -230,6 +350,44 @@ class ScrapingReportGenerator:
         except Exception as e:
             logger.error(f"Error generating performance metrics chart: {e}")
     
+    def _validate_performance_data(self, data: Dict[str, Any]) -> None:
+        """Validate and fix performance data structure to avoid errors"""
+        # Ensure all required keys exist
+        required_keys = ['total_time', 'total_articles', 'articles_per_year', 
+                         'articles_per_newspaper', 'articles_per_canton', 
+                         'search_terms', 'error_count', 'retry_count',
+                         'request_stats', 'delay_stats', 'processing_stats',
+                         'performance_metrics']
+        
+        for key in required_keys:
+            if key not in data:
+                logger.warning(f"Missing key in performance data: {key}")
+                if key in ['articles_per_year', 'articles_per_newspaper', 'articles_per_canton', 'search_terms']:
+                    data[key] = {}
+                elif key in ['request_stats', 'delay_stats', 'processing_stats', 'performance_metrics']:
+                    data[key] = {}
+                else:
+                    data[key] = 0
+        
+        # Ensure stats dictionaries have required fields
+        for stats_key in ['request_stats', 'delay_stats', 'processing_stats']:
+            if not isinstance(data[stats_key], dict):
+                data[stats_key] = {}
+            
+            for field in ['count', 'total_time', 'average_time', 'min_time', 'max_time']:
+                if field not in data[stats_key]:
+                    data[stats_key][field] = 0
+        
+        # Ensure performance metrics have required fields
+        if not isinstance(data['performance_metrics'], dict):
+            data['performance_metrics'] = {}
+        
+        for field in ['articles_per_minute', 'success_rate']:
+            if field not in data['performance_metrics']:
+                data['performance_metrics'][field] = 0
+        
+        logger.info("Performance data validated and fixed if needed")
+
     def _generate_html_report(self, data: Dict[str, Any], report_dir: Path, query: Optional[str] = None):
         """Generate an HTML report that includes all charts and summary statistics"""
         try:
