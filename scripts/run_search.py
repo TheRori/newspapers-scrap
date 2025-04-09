@@ -22,6 +22,16 @@ from newspapers_scrap.security import ProxyManager
 
 # Variable globale pour stocker le scraper
 current_scraper = None
+
+# Define the log_search_period function before it's used
+def log_search_period(args):
+    """Log the search period for detection by app.py stream_process function"""
+    if args.date_range:
+        print(f"Searching for period: {args.date_range}")
+    elif hasattr(args, 'decade') and args.decade:
+        print(f"Searching for period: {args.decade}")
+    elif args.all_time:
+        print("Searching for period: All time")
 def log_search_period(args):
     """Log the search period for detection by app.py stream_process function"""
     if args.date_range:
