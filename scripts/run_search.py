@@ -231,3 +231,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+# Add a log message that can be detected by the app.py stream_process function
+if date_range:
+    print(f"Searching for period: {date_range}")
+elif decade:
+    print(f"Searching for period: {decade}")
+elif all_time:
+    print("Searching for period: All time")
