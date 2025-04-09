@@ -75,7 +75,7 @@ def stream_process(process, queue):
                     total_tasks = int(task_progress_match.group(2))
 
                     # Emit task progress information
-                    socketio.emit('progress', {
+                    socketio.emit('task_progress', {
                         'current_task': current_task,
                         'total_tasks': total_tasks
                     })
@@ -729,6 +729,12 @@ def search():
         search_tasks.append(base_cmd)
         search_periods.append("Default")
 
+    # Send the total number of tasks to the client
+    socketio.emit('search_started', {
+        'total_tasks': len(search_tasks),
+        'periods': search_periods
+    })
+    
     # Only run the first task for now
     # In a future implementation, you could run them sequentially or in parallel
     cmd = search_tasks[0]
