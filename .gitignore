@@ -184,6 +184,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypircgit
-
+reports/
 #secrets
 secrets.yaml
+.aider*
