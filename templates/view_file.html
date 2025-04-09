@@ -281,9 +281,20 @@
             {% endif %}
             {% if spell_corrected %}
             <div class="metadata-item" style="color: #28a745;">
-                <strong>Spell Corrected</strong>
+                <strong>Spell Corrected ({{ correction_method }})</strong>
             </div>
             {% endif %}
+        </div>
+        
+        <!-- Correction buttons -->
+        <div class="correction-controls" style="margin-top: 15px;">
+            <button id="correctMistralBtn" class="btn btn-primary" style="background-color: #007bff; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; margin-right: 10px;">
+                Correct with Mistral AI
+            </button>
+            <button id="correctSymspellBtn" class="btn btn-secondary" style="background-color: #6c757d; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer;">
+                Correct with SymSpell
+            </button>
+            <div id="correctionStatus" style="margin-top: 10px; display: none;"></div>
         </div>
     </div>
 
@@ -401,6 +412,76 @@
             buttons[0].classList.add('active');
         }
     }
+    
+    // Add event listeners for correction buttons
+    document.addEventListener('DOMContentLoaded', function() {
+        const correctMistralBtn = document.getElementById('correctMistralBtn');
+        const correctSymspellBtn = document.getElementById('correctSymspellBtn');
+        const correctionStatus = document.getElementById('correctionStatus');
+        
+        if (correctMistralBtn) {
+            correctMistralBtn.addEventListener('click', function() {
+                applyCorrection('mistral');
+            });
+        }
+        
+        if (correctSymspellBtn) {
+            correctSymspellBtn.addEventListener('click', function() {
+                applyCorrection('symspell');
+            });
+        }
+        
+        function applyCorrection(method) {
+            // Show loading status
+            correctionStatus.style.display = 'block';
+            correctionStatus.innerHTML = '<div style="color: #007bff;">Applying correction, please wait...</div>';
+            
+            // Get current topic and filename from URL
+            const pathParts = window.location.pathname.split('/');
+            let topic, filename;
+            
+            if (pathParts.includes('browse')) {
+                // Regular file view
+                topic = pathParts[pathParts.indexOf('browse') + 1];
+                filename = pathParts[pathParts.indexOf('browse') + 2];
+            } else if (pathParts.includes('version')) {
+                // Version view - we need to redirect after correction
+                alert('Cannot apply corrections to version views. Please go to the main article view.');
+                correctionStatus.style.display = 'none';
+                return;
+            }
+            
+            // Make API request to apply correction
+            fetch(`/api/correct/${topic}/${filename}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    correction_method: method
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Update status
+                correctionStatus.innerHTML = `<div style="color: #28a745;">Correction applied successfully! Word count: ${data.word_count}</div>`;
+                
+                // Reload the page to show the updated content
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                correctionStatus.innerHTML = `<div style="color: #dc3545;">Error applying correction: ${error.message}</div>`;
+            });
+        }
+    });
 </script>
 </body>
 </html>
