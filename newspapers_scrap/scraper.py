@@ -47,6 +47,7 @@ class NewspaperScraper:
         self.apply_spell_correction = apply_spell_correction
         self.correction_method = correction_method
         self.performance_tracker = PerformanceTracker()
+        self.stop_requested = False
 
     async def _init_playwright(self):
         """Initialize Playwright with standard browser"""
@@ -351,6 +352,9 @@ class NewspaperScraper:
         Returns:
             List of article metadata
         """
+        # Reset stop flag at the beginning of a new search
+        self.stop_requested = False
+        
         try:
             self.performance_tracker.start_tracking()  # Start tracking
             all_results = []
@@ -395,7 +399,7 @@ class NewspaperScraper:
             # Process articles
             total_collected = 0
 
-            while total_collected < max_articles:
+            while total_collected < max_articles and not self.stop_requested:
                 if not articles:
                     # If no more articles on current page, go to next page
                     page += 1
@@ -442,7 +446,15 @@ class NewspaperScraper:
                 # Check if we've reached the maximum
                 if total_collected >= max_articles:
                     break
+                
+                # Check if stop was requested
+                if self.stop_requested:
+                    logger.info("Scraping stopped by user request")
+                    break
 
+            if self.stop_requested:
+                logger.info(f"Scraping stopped after processing {total_collected} articles")
+                
             return all_results
         finally:
             self.performance_tracker.stop_tracking()  # Stop tracking
@@ -470,3 +482,9 @@ class NewspaperScraper:
         """Synchronous wrapper for the async save_articles_from_search method"""
         return asyncio.run(self.save_articles_from_search(query, output_dir, max_articles,
                                                           newspapers, cantons))
+                                                          
+    def request_stop(self):
+        """Request the scraper to stop at the next convenient point"""
+        logger.info("Stop requested for scraper")
+        self.stop_requested = True
+        return True

@@ -20,8 +20,12 @@ from newspapers_scrap.scraper import NewspaperScraper
 from newspapers_scrap.config.config import env
 from newspapers_scrap.security import ProxyManager
 
+# Variable globale pour stocker le scraper
+current_scraper = None
+
 
 async def async_main():
+    global current_scraper
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Search for newspaper articles')
     parser.add_argument('query', help='Search query text')
@@ -63,12 +67,12 @@ async def async_main():
             # Search without date filtering
             logger.info("Searching all time")
             try:
-                scraper = NewspaperScraper(
+                current_scraper = NewspaperScraper(
                     apply_spell_correction=not args.no_correction,
                     correction_method=args.correction,
                 )
 
-                results = await scraper.save_articles_from_search(
+                results = await current_scraper.save_articles_from_search(
                     query=args.query,
                     output_dir=args.output,
                     max_articles=args.max_articles,
@@ -80,8 +84,8 @@ async def async_main():
             finally:
                 # Ensure resources are properly closed
                 try:
-                    if scraper:
-                        await scraper._close_playwright()
+                    if current_scraper:
+                        await current_scraper._close_playwright()
                 except Exception as e:
                     logger.error(f"Error closing scraper: {e}")
         else:
@@ -105,13 +109,13 @@ async def async_main():
                             logger.info(f"Searching decade {decade}0s ({decade_start}-{decade_end})")
 
                             try:
-                                scraper = NewspaperScraper(
+                                current_scraper = NewspaperScraper(
                                     apply_spell_correction=not args.no_correction,
                                     correction_method=args.correction,
                                 )
 
                                 # Search for the entire decade
-                                decade_results = await scraper.save_articles_from_search(
+                                decade_results = await current_scraper.save_articles_from_search(
                                     query=args.query,
                                     output_dir=args.output,
                                     max_articles=args.max_articles,
@@ -127,8 +131,8 @@ async def async_main():
                             finally:
                                 # Ensure resources are properly closed even if an error occurs
                                 try:
-                                    if scraper:
-                                        await scraper._close_playwright()
+                                    if current_scraper:
+                                        await current_scraper._close_playwright()
                                 except Exception as e:
                                     logger.error(f"Error closing scraper: {e}")
                     else:
@@ -138,13 +142,13 @@ async def async_main():
                             logger.info(f"Searching year {year}")
 
                             try:
-                                scraper = NewspaperScraper(
+                                current_scraper = NewspaperScraper(
                                     apply_spell_correction=not args.no_correction,
                                     correction_method=args.correction,
                                 )
 
                                 # Search for a specific year
-                                year_results = await scraper.save_articles_from_search(
+                                year_results = await current_scraper.save_articles_from_search(
                                     query=args.query,
                                     output_dir=args.output,
                                     max_articles=args.max_articles,
@@ -160,8 +164,8 @@ async def async_main():
                             finally:
                                 # Ensure resources are properly closed even if an error occurs
                                 try:
-                                    if scraper:
-                                        await scraper._close_playwright()
+                                    if current_scraper:
+                                        await current_scraper._close_playwright()
                                 except Exception as e:
                                     logger.error(f"Error closing scraper: {e}")
                 except ValueError:
@@ -170,12 +174,12 @@ async def async_main():
             else:
                 # Standard search without date filtering
                 try:
-                    scraper = NewspaperScraper(
+                    current_scraper = NewspaperScraper(
                         apply_spell_correction=not args.no_correction,
                         correction_method=args.correction,
                     )
 
-                    results = await scraper.save_articles_from_search(
+                    results = await current_scraper.save_articles_from_search(
                         query=args.query,
                         output_dir=args.output,
                         max_articles=args.max_articles,
@@ -187,8 +191,8 @@ async def async_main():
                 finally:
                     # Ensure resources are properly closed
                     try:
-                        if scraper:
-                            await scraper._close_playwright()
+                        if current_scraper:
+                            await current_scraper._close_playwright()
                     except Exception as e:
                         logger.error(f"Error closing scraper: {e}")
 

@@ -4,6 +4,33 @@ const progressCard = document.getElementById('progressCard');
 const progressBar = document.getElementById('searchProgress');
 const progressText = document.getElementById('progressText');
 
+// Function to stop the current search
+function stopSearch() {
+    console.log("Stopping search...");
+    fetch('/api/stop_search', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Stop search response:', data);
+        if (data.status === 'success') {
+            logContainer.innerHTML += '<p class="log-entry text-danger">Recherche arrêtée par l\'utilisateur</p>';
+            logContainer.scrollTop = logContainer.scrollHeight;
+        } else {
+            logContainer.innerHTML += `<p class="log-entry text-danger">Erreur lors de l'arrêt: ${data.message}</p>`;
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+    })
+    .catch(error => {
+        console.error('Error stopping search:', error);
+        logContainer.innerHTML += `<p class="log-entry text-danger">Erreur lors de l'arrêt: ${error}</p>`;
+        logContainer.scrollTop = logContainer.scrollHeight;
+    });
+}
+
 socket.on('log_message', function (data) {
     const logEntry = document.createElement('p');
     logEntry.className = 'log-entry';
@@ -34,8 +61,10 @@ socket.on('progress', function (data) {
 
 socket.on('search_complete', function (data) {
     const searchBtn = document.getElementById('searchBtn');
+    const stopBtn = document.getElementById('stopBtn');
     searchBtn.disabled = false;
     searchBtn.textContent = 'Search';
+    stopBtn.disabled = true;
     progressBar.classList.remove('progress-bar-animated');
 });
 
@@ -93,7 +122,9 @@ document.getElementById('searchForm').addEventListener('submit', function (e) {
     progressText.textContent = 'Processing articles: 0 / 0';
 
     const searchBtn = document.getElementById('searchBtn');
+    const stopBtn = document.getElementById('stopBtn');
     searchBtn.disabled = true;
+    stopBtn.disabled = false;
     searchBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Searching...';
 
     // Create the form data object

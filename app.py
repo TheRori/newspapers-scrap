@@ -20,6 +20,7 @@ from threading import Thread
 
 logger = logging.getLogger(__name__)
 current_process = None
+current_scraper = None
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'newspaper-search-secret'
@@ -564,8 +565,55 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/api/stop_search', methods=['POST'])
+def stop_search():
+    """Stop the currently running search process"""
+    global current_process, current_scraper
+    
+    logger.info("Stop search request received")
+    
+    try:
+        # Try to stop the scraper if it exists
+        if current_scraper:
+            logger.info("Requesting scraper to stop")
+            current_scraper.stop_requested = True
+            
+        # Try to terminate the process if it exists
+        if current_process and current_process.poll() is None:
+            logger.info(f"Terminating process {current_process.pid}")
+            
+            try:
+                # On Windows, we need to use the process ID
+                pid = current_process.pid
+                parent = psutil.Process(pid)
+                
+                # Kill child processes first
+                children = parent.children(recursive=True)
+                for child in children:
+                    logger.info(f"Terminating child process {child.pid}")
+                    child.terminate()
+                
+                # Then terminate the parent
+                parent.terminate()
+                
+                socketio.emit('log_message', {'message': "Recherche arrêtée par l'utilisateur"})
+                socketio.emit('search_complete', {'status': 'stopped'})
+                
+                return jsonify({'status': 'success', 'message': 'Recherche arrêtée'})
+            except Exception as e:
+                logger.error(f"Error terminating process: {str(e)}")
+                return jsonify({'status': 'error', 'message': str(e)}), 500
+        else:
+            return jsonify({'status': 'error', 'message': 'Aucun processus de recherche actif'}), 400
+    except Exception as e:
+        logger.error(f"Error in stop_search: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/api/search', methods=['POST'])
 def search():
+    global current_process, current_scraper
+    
     data = request.json
     search_tasks = []  # List to store multiple search tasks
 
