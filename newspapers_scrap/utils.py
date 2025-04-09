@@ -7,6 +7,9 @@ import re
 import unicodedata
 from datetime import datetime
 from dateutil import parser as date_parser
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def clean_and_parse_date(date_str, default_date=None):
@@ -31,36 +34,89 @@ def clean_and_parse_date(date_str, default_date=None):
 
         # Replace common OCR errors in month names
         month_replacements = {
-            'Marz': 'März', 'M\u00e4rz': 'März', 'M�rz': 'März',
-            'Marz': 'März', 'Maerz': 'März',
-            'Aout': 'Août', 'Ao\u00fbt': 'Août', 'Ao�t': 'Août',
+            # German months
+            'Marz': 'März', 'M\u00e4rz': 'März', 'M�rz': 'März', 'Maerz': 'März',
+            'Januar': 'Januar', 'Janner': 'Januar', 'J\u00e4nner': 'Januar', 'J�nner': 'Januar',
+            'Februar': 'Februar',
+            'April': 'April',
+            'Mai': 'Mai',
+            'Juni': 'Juni',
+            'Juli': 'Juli',
+            'August': 'August',
+            'September': 'September',
+            'Oktober': 'Oktober',
+            'November': 'November',
+            'Dezember': 'Dezember',
+
+            # French months
+            'Janvier': 'Janvier',
             'Fevrier': 'Février', 'F\u00e9vrier': 'Février', 'F�vrier': 'Février',
+            'Mars': 'Mars',
+            'Avril': 'Avril',
+            'Mai': 'Mai',
+            'Juin': 'Juin',
+            'Juillet': 'Juillet',
+            'Aout': 'Août', 'Ao\u00fbt': 'Août', 'Ao�t': 'Août',
+            'Septembre': 'Septembre',
+            'Octobre': 'Octobre',
+            'Novembre': 'Novembre',
             'Decembre': 'Décembre', 'D\u00e9cembre': 'Décembre', 'D�cembre': 'Décembre'
         }
 
         for error, correction in month_replacements.items():
             cleaned = cleaned.replace(error, correction)
 
-        # Extract just the date part from strings like "de Genève 14. März 1980"
-        date_pattern = r'(\d{1,2}[\.\s-]+(?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember|Janvier|Février|Mars|Avril|Mai|Juin|Juillet|Août|Septembre|Octobre|Novembre|Décembre)[\.\s-]+\d{4})'
+        # Extract just the date part from strings like "de Genève 14. März 1980" or "La liberté, 19. Juli 1990"
+        date_pattern = r'(\d{1,2}\s*\.\s*(?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember|Janvier|Février|Mars|Avril|Mai|Juin|Juillet|Août|Septembre|Octobre|Novembre|Décembre)\s+\d{4})'
         date_match = re.search(date_pattern, cleaned)
 
         if date_match:
             date_part = date_match.group(1)
+            logger.debug(f"Matched date pattern: {date_part}")
         else:
             # If no match with known month names, try to extract any date-like pattern
             date_part = re.search(r'(\d{1,2}[\.\s-]+\w+[\.\s-]+\d{4})', cleaned)
             date_part = date_part.group(1) if date_part else cleaned
+            logger.debug(f"Using generic date pattern: {date_part}")
 
-        # Try various date parsing approaches
+        # Create month translation dictionaries
+        de_month_map = {
+            'Januar': 1, 'Februar': 2, 'März': 3, 'April': 4, 'Mai': 5, 'Juni': 6,
+            'Juli': 7, 'August': 8, 'September': 9, 'Oktober': 10, 'November': 11, 'Dezember': 12
+        }
+
+        fr_month_map = {
+            'Janvier': 1, 'Février': 2, 'Mars': 3, 'Avril': 4, 'Mai': 5, 'Juin': 6,
+            'Juillet': 7, 'Août': 8, 'Septembre': 9, 'Octobre': 10, 'Novembre': 11, 'Décembre': 12
+        }
+
+        # Try manual parsing first for German/French date formats
+        manual_date_pattern = r'(\d{1,2})\s*\.\s*([\w]+)\s+(\d{4})'
+        manual_match = re.search(manual_date_pattern, date_part)
+
+        if manual_match:
+            day = int(manual_match.group(1))
+            month_name = manual_match.group(2)
+            year = int(manual_match.group(3))
+
+            month_num = None
+            if month_name in de_month_map:
+                month_num = de_month_map[month_name]
+            elif month_name in fr_month_map:
+                month_num = fr_month_map[month_name]
+
+            if month_num:
+                logger.debug(f"Manual parsing successful: {day}.{month_num}.{year}")
+                return datetime(year, month_num, day)
+
+        # Try dateutil parser (most flexible)
         try:
-            # Try dateutil parser first (most flexible)
             return date_parser.parse(date_part, fuzzy=True)
-        except:
-            # Try explicit formats
+        except Exception as e:
+            logger.debug(f"dateutil.parser failed: {e}")
+
+            # Try explicit formats with locale
             formats = [
-                '%d. %B %Y',  # 14. März 1980
-                '%d %B %Y',  # 14 März 1980
                 '%d.%m.%Y',  # 14.03.1980
                 '%d/%m/%Y',  # 14/03/1980
                 '%Y-%m-%d',  # 1980-03-14
@@ -68,17 +124,21 @@ def clean_and_parse_date(date_str, default_date=None):
 
             for fmt in formats:
                 try:
-                    return datetime.strptime(date_part, fmt)
-                except:
+                    parsed_date = datetime.strptime(date_part, fmt)
+                    logger.debug(f"Successfully parsed with format {fmt}")
+                    return parsed_date
+                except Exception as e:
+                    logger.debug(f"Format {fmt} failed: {e}")
                     continue
 
             # If all parsing attempts fail, extract just year as last resort
             year_match = re.search(r'(\d{4})', cleaned)
             if year_match:
                 year = int(year_match.group(1))
+                logger.debug(f"Falling back to year only: {year}")
                 return datetime(year, 1, 1)  # Return Jan 1 of the year
     except Exception as e:
-        logger.debug(f"Failed to parse date '{date_str}': {e}")
+        logger.error(f"Failed to parse date '{date_str}': {e}")
 
     return default_date
 
