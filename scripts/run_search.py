@@ -52,6 +52,9 @@ async def async_main():
 
     args = parser.parse_args()
     logger.debug('Searching for newspaper articles')
+    
+    # Log the search period for detection by app.py
+    log_search_period(args)
 
     # Initialize proxy manager if needed
     proxy_manager = None
@@ -231,10 +234,15 @@ def main():
 
 if __name__ == "__main__":
     main()
-# Add a log message that can be detected by the app.py stream_process function
-if date_range:
-    print(f"Searching for period: {date_range}")
-elif decade:
-    print(f"Searching for period: {decade}")
-elif all_time:
-    print("Searching for period: All time")
+
+# This code needs to be inside the async_main function to access the variables
+def log_search_period(args):
+    """Log the search period for detection by app.py stream_process function"""
+    if args.date_range:
+        print(f"Searching for period: {args.date_range}")
+    elif hasattr(args, 'decade') and args.decade:
+        print(f"Searching for period: {args.decade}")
+    elif args.all_time:
+        print("Searching for period: All time")
+
+# Modify the async_main function to call log_search_period
