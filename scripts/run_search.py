@@ -22,7 +22,14 @@ from newspapers_scrap.security import ProxyManager
 
 # Variable globale pour stocker le scraper
 current_scraper = None
-
+def log_search_period(args):
+    """Log the search period for detection by app.py stream_process function"""
+    if args.date_range:
+        print(f"Searching for period: {args.date_range}")
+    elif hasattr(args, 'decade') and args.decade:
+        print(f"Searching for period: {args.decade}")
+    elif args.all_time:
+        print("Searching for period: All time")
 
 # Fonction pour vérifier si un signal d'arrêt a été reçu
 def check_stop_signal():
@@ -31,8 +38,11 @@ def check_stop_signal():
         return True
     return False
 
+
 async def async_main():
     global current_scraper
+    total_tasks = 0
+    current_task_index = 1
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Search for newspaper articles')
     parser.add_argument('query', help='Search query text')
@@ -52,9 +62,23 @@ async def async_main():
 
     args = parser.parse_args()
     logger.debug('Searching for newspaper articles')
-    
+
     # Log the search period for detection by app.py
     log_search_period(args)
+    if args.all_time:
+        total_tasks = 1
+    elif args.date_range:
+        start_year, end_year = map(int, args.date_range.split('-'))
+        if args.search_by == 'decade':
+            # Count decades
+            decade_start = start_year // 10 * 10
+            total_tasks = (end_year - decade_start) // 10 + 1
+        else:
+            # Count years
+            total_tasks = end_year - start_year + 1
+    else:
+        total_tasks = 1
+    print(f"Total search tasks: {total_tasks}")
 
     # Initialize proxy manager if needed
     proxy_manager = None
@@ -117,6 +141,8 @@ async def async_main():
                             decade = str(decade_start)[:3]  # Format: "197" for 1970s
                             decade_end = min(decade_start + 9, end_year)
                             logger.info(f"Searching decade {decade}0s ({decade_start}-{decade_end})")
+                            print(f"Task progress: current_task={current_task_index} total_tasks={total_tasks}")
+                            current_task_index += 1
 
                             try:
                                 current_scraper = NewspaperScraper(
@@ -155,7 +181,8 @@ async def async_main():
                         logger.info("Using year-based search")
                         for year in range(start_year, end_year + 1):
                             logger.info(f"Searching year {year}")
-
+                            print(f"Task progress: current_task={current_task_index} total_tasks={total_tasks}")
+                            current_task_index += 1
                             try:
                                 current_scraper = NewspaperScraper(
                                     apply_spell_correction=not args.no_correction,
@@ -228,6 +255,7 @@ async def async_main():
     duration = time.time() - start_time
     logger.info(f"Processing complete. {len(results) if results else 0} articles processed in {duration:.2f} seconds")
 
+
 def main():
     asyncio.run(async_main())
 
@@ -236,13 +264,6 @@ if __name__ == "__main__":
     main()
 
 # This code needs to be inside the async_main function to access the variables
-def log_search_period(args):
-    """Log the search period for detection by app.py stream_process function"""
-    if args.date_range:
-        print(f"Searching for period: {args.date_range}")
-    elif hasattr(args, 'decade') and args.decade:
-        print(f"Searching for period: {args.decade}")
-    elif args.all_time:
-        print("Searching for period: All time")
+
 
 # Modify the async_main function to call log_search_period
