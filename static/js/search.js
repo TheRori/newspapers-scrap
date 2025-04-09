@@ -37,27 +37,16 @@ function stopSearch() {
     });
 }
 
+let totalYears = 1;
+let currentYear = 0;
+
 // Update the overall progress bar
-function updateOverallProgress() {
-    let overallPercentage = 0;
-
-    if (totalTasks > 0) {
-        // Calculate based on completed tasks plus current task progress
-        const currentTaskProgress = parseInt(document.getElementById('searchProgress').getAttribute('aria-valuenow')) || 0;
-
-        // Only count partial progress for the current task
-        overallPercentage = Math.floor(((completedTasks + (currentTaskProgress / 100)) / totalTasks) * 100);
-    }
-
-    // Update the overall progress bar
+function updateOverallProgress(currentYear, totalYears) {
+    const overallPercentage = Math.floor((currentYear / totalYears) * 100);
     const overallProgressBar = document.getElementById('overallProgress');
     overallProgressBar.style.width = `${overallPercentage}%`;
     overallProgressBar.textContent = `${overallPercentage}%`;
     overallProgressBar.setAttribute('aria-valuenow', overallPercentage);
-    
-    // Update the overall progress text
-    document.getElementById('overallProgressText').textContent = 
-        `Task ${currentTaskIndex + 1} of ${totalTasks} (${overallPercentage}% complete)`;
 }
 
 socket.on('log_message', function (data) {
@@ -87,45 +76,24 @@ socket.on('results_count', function (data) {
     $('#resultsCountText').text(countText);
 });
 
-// Listen for task_progress events to update task tracking
-socket.on('task_progress', function(data) {
-    // Update task tracking with proper task information
-    if (data.current_task) {
-        currentTaskIndex = data.current_task - 1;
-    }
-    
-    // Only update total tasks if it's larger than what we already know
-    if (data.total_tasks && (!totalTasks || totalTasks < data.total_tasks)) {
-        totalTasks = data.total_tasks;
-        
-        // Update the current task text
-        document.getElementById('currentTaskText').textContent = 
-            `(Task ${currentTaskIndex + 1}/${totalTasks})`;
-            
-        // Update the overall progress
-        updateOverallProgress();
-    }
+socket.on('year_progress', function(data) {
+    currentYear = data.current_year;
+    totalYears = data.total_years;
+
+    // Update the overall progress bar
+    updateOverallProgress(currentYear, totalYears);
+
+    // Display which year we're on
+    document.getElementById('overallProgressText').textContent =
+        `Processing year ${currentYear} of ${totalYears}`;
 });
 
-socket.on('progress', function (data) {
-    progressCard.style.display = 'block';
+socket.on('progress', function(data) {
+    // Update the per-year progress bar
     progressBar.style.width = `${data.value}%`;
     progressBar.textContent = `${data.value}%`;
     progressBar.setAttribute('aria-valuenow', data.value);
     progressText.textContent = `Processing articles: ${data.saved} / ${data.total}`;
-    
-    // Update task tracking with proper task information whenever available
-    if (data.current_task) {
-        currentTaskIndex = data.current_task - 1;
-    }
-    
-    // Only update total tasks if it's larger than what we already know
-    if (data.total_tasks && (!totalTasks || totalTasks < data.total_tasks)) {
-        totalTasks = data.total_tasks;
-    }
-
-    // Always update the overall progress
-    updateOverallProgress();
 });
 
 socket.on('period_update', function(data) {
@@ -208,6 +176,13 @@ socket.on('search_complete', function (data) {
     
     document.getElementById('overallProgressText').textContent = 
         `All ${totalTasks} tasks completed (100%)`;
+});
+
+// Add event listeners for our new messages
+socket.on('search_scope', function(data) {
+    totalYears = data.total_years;
+    // Reset the overall progress bar
+    updateOverallProgress(0, totalYears);
 });
 
 function updateDateInputs() {

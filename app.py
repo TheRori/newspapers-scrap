@@ -35,11 +35,21 @@ def stream_process(process, queue):
     processed_pattern = re.compile(r'Version saved to: (.*?)\.json')
     results_found_pattern = re.compile(r'Found (\d+) total results for query .*, processing up to (\d+)')
     date_range_pattern = re.compile(r'Searching for period: (\d{4})-(\d{4}|\d{4})')
-    task_progress_pattern = re.compile(r'Task progress: current_task=(\d+) total_tasks=(\d+)')
+    scope_pattern = re.compile(r'SEARCH_SCOPE: total_years=(\d+)')
+    year_progress_pattern = re.compile(r'YEAR_PROGRESS: current_year=(\d+) total_years=(\d+)')
+    total_years = 1
+    current_year = 0
 
     try:
         current_period = None
         for line in iter(process.stdout.readline, ''):
+            scope_match = scope_pattern.search(line)
+            if scope_match:
+                total_years = int(scope_match.group(1))
+                socketio.emit('search_scope', {
+                    'total_years': total_years
+                })
+                continue
             if isinstance(line, bytes):
                 line = line.decode('utf-8')
             line = line.strip()
@@ -48,7 +58,18 @@ def stream_process(process, queue):
             except UnicodeEncodeError:
                 print(line.encode('utf-8', errors='replace').decode('ascii',
                                                                     errors='replace'))  # Safely encode problematic characters
+            year_match = year_progress_pattern.search(line)
+            if year_match:
+                current_year = int(year_match.group(1))
+                total_years = int(year_match.group(2))
 
+                # Emit cumulative progress information
+                socketio.emit('year_progress', {
+                    'current_year': current_year,
+                    'total_years': total_years,
+                    'percentage': int((current_year / total_years) * 100)
+                })
+                continue
             # Check if line contains information about the date range being searched
             date_range_match = date_range_pattern.search(line)
             if date_range_match:
@@ -69,16 +90,7 @@ def stream_process(process, queue):
                     'max_articles': max_articles,
                     'period': current_period
                 })
-            task_progress_match = task_progress_pattern.search(line)
-            if task_progress_match:
-                    current_task = int(task_progress_match.group(1))
-                    total_tasks = int(task_progress_match.group(2))
 
-                    # Emit task progress information
-                    socketio.emit('task_progress', {
-                        'current_task': current_task,
-                        'total_tasks': total_tasks
-                    })
 
             # When an article is saved, extract path and add to queue
             processed_match = processed_pattern.search(line)

@@ -51,8 +51,8 @@ def check_stop_signal():
 
 async def async_main():
     global current_scraper
-    total_tasks = 0
-    current_task_index = 1
+    total_years = 0
+    completed_years = 0
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Search for newspaper articles')
     parser.add_argument('query', help='Search query text')
@@ -73,22 +73,22 @@ async def async_main():
     args = parser.parse_args()
     logger.debug('Searching for newspaper articles')
 
-    # Log the search period for detection by app.py
-    log_search_period(args)
+    # After parsing arguments, calculate total years in search
     if args.all_time:
-        total_tasks = 1
+        total_years = 1  # Just one comprehensive search
     elif args.date_range:
         start_year, end_year = map(int, args.date_range.split('-'))
         if args.search_by == 'decade':
-            # Count decades
-            decade_start = start_year // 10 * 10
-            total_tasks = (end_year - decade_start) // 10 + 1
+            # Will be processed by decade but track by years
+            total_years = end_year - start_year + 1
         else:
-            # Count years
-            total_tasks = end_year - start_year + 1
+            # Track by individual years
+            total_years = end_year - start_year + 1
     else:
-        total_tasks = 1
-    print(f"Total search tasks: {total_tasks}")
+        total_years = 1  # Single year search
+
+    # Log overall task information once at the beginning
+    print(f"SEARCH_SCOPE: total_years={total_years}")
 
     # Initialize proxy manager if needed
     proxy_manager = None
@@ -151,8 +151,9 @@ async def async_main():
                             decade = str(decade_start)[:3]  # Format: "197" for 1970s
                             decade_end = min(decade_start + 9, end_year)
                             logger.info(f"Searching decade {decade}0s ({decade_start}-{decade_end})")
-                            print(f"Task progress: current_task={current_task_index} total_tasks={total_tasks}")
-                            current_task_index += 1
+                            completed_years += 1
+                            print(f"YEAR_PROGRESS: current_year={completed_years} total_years={total_years}")
+
 
                             try:
                                 current_scraper = NewspaperScraper(
@@ -191,8 +192,8 @@ async def async_main():
                         logger.info("Using year-based search")
                         for year in range(start_year, end_year + 1):
                             logger.info(f"Searching year {year}")
-                            print(f"Task progress: current_task={current_task_index} total_tasks={total_tasks}")
-                            current_task_index += 1
+                            completed_years += 1
+                            print(f"YEAR_PROGRESS: current_year={completed_years} total_years={total_years}")
                             try:
                                 current_scraper = NewspaperScraper(
                                     apply_spell_correction=not args.no_correction,
