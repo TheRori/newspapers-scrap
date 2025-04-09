@@ -739,6 +739,7 @@ def search():
     thread.start()
 
     def emit_output():
+        nonlocal process  # Declare process as nonlocal at the beginning of the function
         current_task_index = 0
         total_tasks = len(search_tasks)
         
@@ -764,7 +765,6 @@ def search():
                 })
                 
                 # Start the next process
-                nonlocal process
                 process = subprocess.Popen(
                     next_cmd,
                     stdout=subprocess.PIPE,
