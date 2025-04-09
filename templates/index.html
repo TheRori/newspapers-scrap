@@ -129,13 +129,29 @@
         <div class="card-header">Progress</div>
         <div class="card-body">
             <div class="card-body">
-                <div class="progress" style="height: 25px;">
-                    <div class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
-                         id="searchProgress" role="progressbar" style="width: 0%"
-                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%
+                <!-- Overall progress across all tasks -->
+                <div class="mb-3">
+                    <h6 class="mb-2">Overall Progress <span id="currentTaskText" class="text-muted"></span></h6>
+                    <div class="progress" style="height: 25px;">
+                        <div class="progress-bar bg-success progress-bar-striped progress-bar-animated"
+                             id="overallProgress" role="progressbar" style="width: 0%"
+                             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%
+                        </div>
                     </div>
+                    <p class="text-center mt-2 mb-0" id="overallProgressText">Waiting to start...</p>
                 </div>
-                <p class="text-center mt-2 mb-0" id="progressText">Processing articles: 0 / 0</p>
+                
+                <!-- Current task progress -->
+                <div>
+                    <h6 class="mb-2">Current Period: <span id="currentPeriodText">-</span></h6>
+                    <div class="progress" style="height: 25px;">
+                        <div class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
+                             id="searchProgress" role="progressbar" style="width: 0%"
+                             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%
+                        </div>
+                    </div>
+                    <p class="text-center mt-2 mb-0" id="progressText">Processing articles: 0 / 0</p>
+                </div>
             </div>
         </div>
 

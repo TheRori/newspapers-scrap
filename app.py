@@ -34,8 +34,10 @@ def stream_process(process, queue):
     total_pattern = re.compile(r'Processing complete\. (\d+) articles processed')
     processed_pattern = re.compile(r'Version saved to: (.*?)\.json')
     results_found_pattern = re.compile(r'Found (\d+) total results for query .*, processing up to (\d+)')
+    date_range_pattern = re.compile(r'Searching for period: (\d{4})-(\d{4}|\d{4})')
 
     try:
+        current_period = None
         for line in iter(process.stdout.readline, ''):
             if isinstance(line, bytes):
                 line = line.decode('utf-8')
@@ -45,6 +47,13 @@ def stream_process(process, queue):
             except UnicodeEncodeError:
                 print(line.encode('utf-8', errors='replace').decode('ascii',
                                                                     errors='replace'))  # Safely encode problematic characters
+
+            # Check if line contains information about the date range being searched
+            date_range_match = date_range_pattern.search(line)
+            if date_range_match:
+                current_period = f"{date_range_match.group(1)}-{date_range_match.group(2)}"
+                queue.put(f"Searching period: {current_period}")
+                socketio.emit('period_update', {'period': current_period})
 
             # Check if line contains information about total results found
             results_found_match = results_found_pattern.search(line)
@@ -56,7 +65,8 @@ def stream_process(process, queue):
                 # Emit results count information
                 socketio.emit('results_count', {
                     'total': total_results,
-                    'max_articles': max_articles
+                    'max_articles': max_articles,
+                    'period': current_period
                 })
 
             # When an article is saved, extract path and add to queue
@@ -68,7 +78,8 @@ def stream_process(process, queue):
 
                 # Also emit using socketio for immediate display
                 socketio.emit('article_saved', {
-                    'path': json_path
+                    'path': json_path,
+                    'period': current_period
                 })
 
                 try:
@@ -94,13 +105,14 @@ def stream_process(process, queue):
                 socketio.emit('progress', {
                     'value': progress,
                     'saved': current_article,
-                    'total': total_articles
+                    'total': total_articles,
+                    'period': current_period
                 })
 
             complete_match = total_pattern.search(line)
             if complete_match:
                 saved_articles = int(complete_match.group(1))
-                queue.put(f"Completed processing {saved_articles} articles")
+                queue.put(f"Completed processing {saved_articles} articles for period {current_period}")
 
     finally:
         process.stdout.close()
@@ -636,6 +648,7 @@ def search():
     
     data = request.json
     search_tasks = []  # List to store multiple search tasks
+    search_periods = []  # Store human-readable periods for each task
 
     # Base command with common parameters
     base_cmd = [sys.executable, 'scripts/run_search.py', data['query']]
@@ -677,12 +690,14 @@ def search():
                     decade_cmd = base_cmd.copy()
                     decade_cmd.extend(['--date_range', f"{current_decade_start}-{decade_end}"])
                     search_tasks.append(decade_cmd)
+                    search_periods.append(f"{current_decade_start}-{decade_end}")
                 # Otherwise, search year by year for partial decades
                 else:
                     for year in range(max(current_decade_start, start_year), min(decade_end + 1, end_year + 1)):
                         year_cmd = base_cmd.copy()
                         year_cmd.extend(['--date_range', f"{year}-{year}"])
                         search_tasks.append(year_cmd)
+                        search_periods.append(f"{year}")
 
                 current_decade_start += 10
     elif search_by == 'decade':
@@ -691,18 +706,22 @@ def search():
             cmd = base_cmd.copy()
             cmd.extend(['--decade', decade])
             search_tasks.append(cmd)
+            search_periods.append(decade)
     elif search_by == 'all_time':
         cmd = base_cmd.copy()
         cmd.extend(['--all_time'])
         search_tasks.append(cmd)
+        search_periods.append("All time")
 
     # If no tasks were created (due to missing parameters), use a default
     if not search_tasks:
         search_tasks.append(base_cmd)
+        search_periods.append("Default")
 
     # Only run the first task for now
     # In a future implementation, you could run them sequentially or in parallel
     cmd = search_tasks[0]
+    current_period = search_periods[0]
 
     process = subprocess.Popen(
         cmd,
@@ -720,11 +739,54 @@ def search():
     thread.start()
 
     def emit_output():
-        while True:
+        current_task_index = 0
+        total_tasks = len(search_tasks)
+        
+        while current_task_index < total_tasks:
             if process.poll() is not None and output_queue.empty():
-                socketio.emit('search_complete', {'status': 'completed'})
-                socketio.sleep(0.1)
-                break
+                current_task_index += 1
+                
+                # If we've completed all tasks
+                if current_task_index >= total_tasks:
+                    socketio.emit('search_complete', {'status': 'completed'})
+                    socketio.sleep(0.1)
+                    break
+                
+                # Start the next task
+                next_cmd = search_tasks[current_task_index]
+                next_period = search_periods[current_task_index]
+                
+                # Emit information about the next task
+                socketio.emit('task_change', {
+                    'current_task': current_task_index + 1,
+                    'total_tasks': total_tasks,
+                    'period': next_period
+                })
+                
+                # Start the next process
+                nonlocal process
+                process = subprocess.Popen(
+                    next_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    bufsize=1,
+                    universal_newlines=True,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                
+                # Reset progress for the new task
+                socketio.emit('progress', {
+                    'value': 0,
+                    'saved': 0,
+                    'total': 0,
+                    'current_task': current_task_index + 1,
+                    'total_tasks': total_tasks
+                })
+                
+                # Continue processing output
+                continue
+                
             try:
                 line = output_queue.get(timeout=0.1)
                 if line:
@@ -739,7 +801,11 @@ def search():
                 continue
 
     socketio.start_background_task(emit_output)
-    return jsonify({'status': 'started', 'tasks_count': len(search_tasks)})
+    return jsonify({
+        'status': 'started', 
+        'tasks_count': len(search_tasks),
+        'periods': search_periods
+    })
 
 
 def get_article_versions(base_id):
