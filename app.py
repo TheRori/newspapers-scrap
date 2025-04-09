@@ -35,6 +35,7 @@ def stream_process(process, queue):
     processed_pattern = re.compile(r'Version saved to: (.*?)\.json')
     results_found_pattern = re.compile(r'Found (\d+) total results for query .*, processing up to (\d+)')
     date_range_pattern = re.compile(r'Searching for period: (\d{4})-(\d{4}|\d{4})')
+    task_progress_pattern = re.compile(r'Task progress: current_task=(\d+) total_tasks=(\d+)')
 
     try:
         current_period = None
@@ -68,6 +69,16 @@ def stream_process(process, queue):
                     'max_articles': max_articles,
                     'period': current_period
                 })
+            task_progress_match = task_progress_pattern.search(line)
+            if task_progress_match:
+                    current_task = int(task_progress_match.group(1))
+                    total_tasks = int(task_progress_match.group(2))
+
+                    # Emit task progress information
+                    socketio.emit('progress', {
+                        'current_task': current_task,
+                        'total_tasks': total_tasks
+                    })
 
             # When an article is saved, extract path and add to queue
             processed_match = processed_pattern.search(line)
