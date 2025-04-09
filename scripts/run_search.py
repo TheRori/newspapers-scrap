@@ -24,6 +24,13 @@ from newspapers_scrap.security import ProxyManager
 current_scraper = None
 
 
+# Fonction pour vérifier si un signal d'arrêt a été reçu
+def check_stop_signal():
+    if os.path.exists('stop_signal.txt'):
+        logger.info("Stop signal detected")
+        return True
+    return False
+
 async def async_main():
     global current_scraper
     # Parse command-line arguments
@@ -114,6 +121,11 @@ async def async_main():
                                     correction_method=args.correction,
                                 )
 
+                                # Vérifier le signal d'arrêt avant de commencer
+                                if check_stop_signal():
+                                    logger.info("Stopping search due to stop signal")
+                                    break
+                                
                                 # Search for the entire decade
                                 decade_results = await current_scraper.save_articles_from_search(
                                     query=args.query,
@@ -147,6 +159,11 @@ async def async_main():
                                     correction_method=args.correction,
                                 )
 
+                                # Vérifier le signal d'arrêt avant de commencer
+                                if check_stop_signal():
+                                    logger.info("Stopping search due to stop signal")
+                                    break
+                                    
                                 # Search for a specific year
                                 year_results = await current_scraper.save_articles_from_search(
                                     query=args.query,
@@ -179,6 +196,11 @@ async def async_main():
                         correction_method=args.correction,
                     )
 
+                    # Vérifier le signal d'arrêt avant de commencer
+                    if check_stop_signal():
+                        logger.info("Stopping search due to stop signal")
+                        return
+                        
                     results = await current_scraper.save_articles_from_search(
                         query=args.query,
                         output_dir=args.output,

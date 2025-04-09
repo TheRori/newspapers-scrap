@@ -399,7 +399,18 @@ class NewspaperScraper:
             # Process articles
             total_collected = 0
 
+            # Fonction pour vérifier le fichier signal d'arrêt
+            def check_external_stop_signal():
+                if os.path.exists('stop_signal.txt'):
+                    logger.info("External stop signal detected")
+                    self.stop_requested = True
+                    return True
+                return False
+                
             while total_collected < max_articles and not self.stop_requested:
+                # Vérifier périodiquement le signal d'arrêt externe
+                if total_collected % 5 == 0:  # Vérifier tous les 5 articles
+                    check_external_stop_signal()
                 if not articles:
                     # If no more articles on current page, go to next page
                     page += 1

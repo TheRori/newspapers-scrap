@@ -604,7 +604,19 @@ def stop_search():
                 logger.error(f"Error terminating process: {str(e)}")
                 return jsonify({'status': 'error', 'message': str(e)}), 500
         else:
-            return jsonify({'status': 'error', 'message': 'Aucun processus de recherche actif'}), 400
+            # Même si le processus n'est pas trouvé, on peut quand même essayer d'arrêter le scraper
+            # via un fichier signal
+            try:
+                # Créer un fichier signal que le script run_search.py pourra détecter
+                with open('stop_signal.txt', 'w') as f:
+                    f.write(f"Stop requested at {datetime.now().isoformat()}")
+                logger.info("Created stop signal file")
+                
+                socketio.emit('log_message', {'message': "Signal d'arrêt envoyé"})
+                return jsonify({'status': 'success', 'message': 'Signal d\'arrêt envoyé'}), 200
+            except Exception as e:
+                logger.error(f"Error creating stop signal: {str(e)}")
+                return jsonify({'status': 'error', 'message': str(e)}), 500
     except Exception as e:
         logger.error(f"Error in stop_search: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -613,6 +625,14 @@ def stop_search():
 @app.route('/api/search', methods=['POST'])
 def search():
     global current_process, current_scraper
+    
+    # Supprimer le fichier signal s'il existe
+    if os.path.exists('stop_signal.txt'):
+        try:
+            os.remove('stop_signal.txt')
+            logger.info("Removed existing stop signal file")
+        except Exception as e:
+            logger.error(f"Error removing stop signal file: {str(e)}")
     
     data = request.json
     search_tasks = []  # List to store multiple search tasks
