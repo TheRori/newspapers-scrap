@@ -5,6 +5,9 @@ import logging_config
 import json
 import os
 import re
+import psutil
+import signal
+from datetime import datetime
 import sys
 import logging
 import subprocess
@@ -16,6 +19,7 @@ from queue import Queue, Empty
 from threading import Thread
 
 logger = logging.getLogger(__name__)
+current_process = None
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'newspaper-search-secret'
