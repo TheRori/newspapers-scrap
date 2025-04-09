@@ -54,6 +54,10 @@ function updateOverallProgress() {
     overallProgressBar.style.width = `${overallPercentage}%`;
     overallProgressBar.textContent = `${overallPercentage}%`;
     overallProgressBar.setAttribute('aria-valuenow', overallPercentage);
+    
+    // Update the overall progress text
+    document.getElementById('overallProgressText').textContent = 
+        `Task ${currentTaskIndex + 1} of ${totalTasks} (${overallPercentage}% complete)`;
 }
 
 socket.on('log_message', function (data) {
@@ -94,10 +98,6 @@ socket.on('progress', function (data) {
     if (data.current_task && data.total_tasks) {
         currentTaskIndex = data.current_task - 1;
         totalTasks = data.total_tasks;
-
-        // Update the overall progress text
-        document.getElementById('overallProgressText').textContent =
-            `Task ${data.current_task} of ${data.total_tasks}`;
     }
 
     // Always update the overall progress
@@ -110,9 +110,15 @@ socket.on('period_update', function(data) {
 
 socket.on('task_change', function(data) {
     console.log('Task change:', data);
+    
+    // Mark the previous task as completed
+    if (currentTaskIndex >= 0) {
+        completedTasks++;
+    }
+    
+    // Update task tracking
     currentTaskIndex = data.current_task - 1;
     totalTasks = data.total_tasks;
-    completedTasks = currentTaskIndex;
     
     // Update the current period text
     document.getElementById('currentPeriodText').textContent = data.period || '-';
