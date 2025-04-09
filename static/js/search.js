@@ -39,24 +39,21 @@ function stopSearch() {
 
 // Update the overall progress bar
 function updateOverallProgress() {
-    // Calculate overall progress
     let overallPercentage = 0;
-    
+
     if (totalTasks > 0) {
-        // If we have tasks in progress, calculate based on completed tasks plus current task progress
+        // Calculate based on completed tasks plus current task progress
         const currentTaskProgress = parseInt(document.getElementById('searchProgress').getAttribute('aria-valuenow')) || 0;
-        overallPercentage = Math.floor((completedTasks * 100 + currentTaskProgress) / totalTasks);
+
+        // Only count partial progress for the current task
+        overallPercentage = Math.floor(((completedTasks + (currentTaskProgress / 100)) / totalTasks) * 100);
     }
-    
+
     // Update the overall progress bar
     const overallProgressBar = document.getElementById('overallProgress');
     overallProgressBar.style.width = `${overallPercentage}%`;
     overallProgressBar.textContent = `${overallPercentage}%`;
     overallProgressBar.setAttribute('aria-valuenow', overallPercentage);
-    
-    // Update the overall progress text
-    const overallProgressText = document.getElementById('overallProgressText');
-    overallProgressText.textContent = `Task ${currentTaskIndex + 1} of ${totalTasks} (${overallPercentage}% complete)`;
 }
 
 socket.on('log_message', function (data) {
@@ -93,13 +90,17 @@ socket.on('progress', function (data) {
     progressBar.setAttribute('aria-valuenow', data.value);
     progressText.textContent = `Processing articles: ${data.saved} / ${data.total}`;
     
-    // If we have task information, update the task tracking
+    // Update task tracking with proper task information whenever available
     if (data.current_task && data.total_tasks) {
         currentTaskIndex = data.current_task - 1;
         totalTasks = data.total_tasks;
+
+        // Update the overall progress text
+        document.getElementById('overallProgressText').textContent =
+            `Task ${data.current_task} of ${data.total_tasks}`;
     }
-    
-    // Update the overall progress
+
+    // Always update the overall progress
     updateOverallProgress();
 });
 
