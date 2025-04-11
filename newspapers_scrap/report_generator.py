@@ -3,9 +3,9 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 from pathlib import Path
@@ -156,20 +156,30 @@ class ScrapingReportGenerator:
                 logger.warning("No time data available for pie chart, using placeholder values")
                 sizes = [1, 1, 1, 1]  # Placeholder equal values
             
-            # Create pie chart
-            plt.figure(figsize=(10, 7))
-            plt.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, 
+            # Create pie chart with a new figure to avoid thread issues
+            fig, ax = plt.subplots(figsize=(10, 7))
+            ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, 
                    colors=sns.color_palette("viridis", 4))
-            plt.axis('equal')
-            plt.title('Distribution du temps total de scraping')
+            ax.axis('equal')
+            ax.set_title('Distribution du temps total de scraping')
             
-            # Save figure
-            plt.savefig(report_dir / "time_distribution.png", dpi=300, bbox_inches='tight')
-            plt.close()
+            # Save figure and explicitly close it
+            fig.savefig(report_dir / "time_distribution.png", dpi=300, bbox_inches='tight')
+            plt.close(fig)
             
             logger.info("Generated time distribution chart")
         except Exception as e:
             logger.error(f"Error generating time distribution chart: {e}")
+            # Create a fallback image in case of error
+            try:
+                fig, ax = plt.subplots(figsize=(10, 7))
+                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
+                        horizontalalignment='center', verticalalignment='center',
+                        fontsize=14, color='red')
+                fig.savefig(report_dir / "time_distribution.png", dpi=300, bbox_inches='tight')
+                plt.close(fig)
+            except Exception as inner_e:
+                logger.error(f"Failed to create fallback chart: {inner_e}")
     
     def _generate_articles_by_year_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing articles by year"""
@@ -178,46 +188,46 @@ class ScrapingReportGenerator:
             if not articles_by_year:
                 logger.warning("No article year data available for chart")
                 # Create a placeholder chart
-                plt.figure(figsize=(12, 6))
-                plt.text(0.5, 0.5, 'Aucune donnée disponible par année', 
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.text(0.5, 0.5, 'Aucune donnée disponible par année', 
                          horizontalalignment='center', verticalalignment='center',
                          fontsize=14)
-                plt.tight_layout()
-                plt.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
-                plt.close()
+                fig.tight_layout()
+                fig.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
+                plt.close(fig)
                 return
                 
             # Convert to DataFrame for easier plotting
             df = pd.DataFrame(list(articles_by_year.items()), columns=['Année', 'Nombre d\'articles'])
             df = df.sort_values('Année')
             
-            plt.figure(figsize=(12, 6))
-            ax = sns.barplot(x='Année', y='Nombre d\'articles', data=df)
-            plt.title('Articles par année')
-            plt.xticks(rotation=45)
+            fig, ax = plt.subplots(figsize=(12, 6))
+            sns.barplot(x='Année', y='Nombre d\'articles', data=df, ax=ax)
+            ax.set_title('Articles par année')
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
             
             # Add value labels on top of bars
             for i, v in enumerate(df['Nombre d\'articles']):
                 ax.text(i, v + 0.1, str(v), ha='center')
             
-            plt.tight_layout()
-            plt.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
-            plt.close()
+            fig.tight_layout()
+            fig.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
+            plt.close(fig)
             
             logger.info("Generated articles by year chart")
         except Exception as e:
             logger.error(f"Error generating articles by year chart: {e}")
             # Create a fallback chart
             try:
-                plt.figure(figsize=(12, 6))
-                plt.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
                          horizontalalignment='center', verticalalignment='center',
                          fontsize=14, color='red')
-                plt.tight_layout()
-                plt.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
-                plt.close()
-            except:
-                pass
+                fig.tight_layout()
+                fig.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
+                plt.close(fig)
+            except Exception as inner_e:
+                logger.error(f"Failed to create fallback chart: {inner_e}")
     
     def _generate_articles_by_newspaper_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing articles by newspaper"""
@@ -226,13 +236,13 @@ class ScrapingReportGenerator:
             if not articles_by_newspaper:
                 logger.warning("No newspaper data available for chart")
                 # Create a placeholder chart
-                plt.figure(figsize=(12, 6))
-                plt.text(0.5, 0.5, 'Aucune donnée disponible par journal', 
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.text(0.5, 0.5, 'Aucune donnée disponible par journal', 
                          horizontalalignment='center', verticalalignment='center',
                          fontsize=14)
-                plt.tight_layout()
-                plt.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
-                plt.close()
+                fig.tight_layout()
+                fig.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
+                plt.close(fig)
                 return
                 
             # Convert to DataFrame and sort by count
@@ -247,9 +257,9 @@ class ScrapingReportGenerator:
             else:
                 title = 'Articles par journal'
             
-            plt.figure(figsize=(12, 6))
-            ax = sns.barplot(x='Nombre d\'articles', y='Journal', data=df)
-            plt.title(title)
+            fig, ax = plt.subplots(figsize=(12, 6))
+            sns.barplot(x='Nombre d\'articles', y='Journal', data=df, ax=ax)
+            ax.set_title(title)
             
             # Add value labels
             for i, v in enumerate(df['Nombre d\'articles']):
@@ -257,24 +267,24 @@ class ScrapingReportGenerator:
                 offset = max(0.1, v * 0.05) if v > 0 else 0.1
                 ax.text(v + offset, i, str(v), va='center')
             
-            plt.tight_layout()
-            plt.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
-            plt.close()
+            fig.tight_layout()
+            fig.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
+            plt.close(fig)
             
             logger.info("Generated articles by newspaper chart")
         except Exception as e:
             logger.error(f"Error generating articles by newspaper chart: {e}")
             # Create a fallback chart
             try:
-                plt.figure(figsize=(12, 6))
-                plt.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
                          horizontalalignment='center', verticalalignment='center',
                          fontsize=14, color='red')
-                plt.tight_layout()
-                plt.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
-                plt.close()
-            except:
-                pass
+                fig.tight_layout()
+                fig.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
+                plt.close(fig)
+            except Exception as inner_e:
+                logger.error(f"Failed to create fallback chart: {inner_e}")
     
     def _generate_articles_by_canton_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing articles by canton"""
@@ -283,13 +293,13 @@ class ScrapingReportGenerator:
             if not articles_by_canton:
                 logger.warning("No canton data available for chart")
                 # Create a placeholder chart
-                plt.figure(figsize=(12, 6))
-                plt.text(0.5, 0.5, 'Aucune donnée disponible par canton', 
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.text(0.5, 0.5, 'Aucune donnée disponible par canton', 
                          horizontalalignment='center', verticalalignment='center',
                          fontsize=14)
-                plt.tight_layout()
-                plt.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
-                plt.close()
+                fig.tight_layout()
+                fig.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
+                plt.close(fig)
                 return
                 
             # Convert to DataFrame and sort by count
@@ -297,9 +307,9 @@ class ScrapingReportGenerator:
                              columns=['Canton', 'Nombre d\'articles'])
             df = df.sort_values('Nombre d\'articles', ascending=False)
             
-            plt.figure(figsize=(12, 6))
-            ax = sns.barplot(x='Nombre d\'articles', y='Canton', data=df)
-            plt.title('Articles par canton')
+            fig, ax = plt.subplots(figsize=(12, 6))
+            sns.barplot(x='Nombre d\'articles', y='Canton', data=df, ax=ax)
+            ax.set_title('Articles par canton')
             
             # Add value labels
             for i, v in enumerate(df['Nombre d\'articles']):
@@ -307,24 +317,24 @@ class ScrapingReportGenerator:
                 offset = max(0.1, v * 0.05) if v > 0 else 0.1
                 ax.text(v + offset, i, str(v), va='center')
             
-            plt.tight_layout()
-            plt.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
-            plt.close()
+            fig.tight_layout()
+            fig.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
+            plt.close(fig)
             
             logger.info("Generated articles by canton chart")
         except Exception as e:
             logger.error(f"Error generating articles by canton chart: {e}")
             # Create a fallback chart
             try:
-                plt.figure(figsize=(12, 6))
-                plt.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
                          horizontalalignment='center', verticalalignment='center',
                          fontsize=14, color='red')
-                plt.tight_layout()
-                plt.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
-                plt.close()
-            except:
-                pass
+                fig.tight_layout()
+                fig.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
+                plt.close(fig)
+            except Exception as inner_e:
+                logger.error(f"Failed to create fallback chart: {inner_e}")
     
     def _generate_performance_metrics_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing performance metrics"""
@@ -341,10 +351,10 @@ class ScrapingReportGenerator:
             # Create DataFrame
             df = pd.DataFrame(list(metrics.items()), columns=['Métrique', 'Valeur'])
             
-            # Create horizontal bar chart
-            plt.figure(figsize=(12, 6))
-            ax = sns.barplot(x='Valeur', y='Métrique', data=df)
-            plt.title('Métriques de performance')
+            # Create horizontal bar chart with explicit figure and axes
+            fig, ax = plt.subplots(figsize=(12, 6))
+            sns.barplot(x='Valeur', y='Métrique', data=df, ax=ax)
+            ax.set_title('Métriques de performance')
             
             # Add value labels
             for i, v in enumerate(df['Valeur']):
@@ -352,13 +362,24 @@ class ScrapingReportGenerator:
                 offset = max(0.1, v * 0.05) if v > 0 else 0.1
                 ax.text(v + offset, i, f"{v:.2f}", va='center')
             
-            plt.tight_layout()
-            plt.savefig(report_dir / "performance_metrics.png", dpi=300, bbox_inches='tight')
-            plt.close()
+            fig.tight_layout()
+            fig.savefig(report_dir / "performance_metrics.png", dpi=300, bbox_inches='tight')
+            plt.close(fig)
             
             logger.info("Generated performance metrics chart")
         except Exception as e:
             logger.error(f"Error generating performance metrics chart: {e}")
+            # Create a fallback chart
+            try:
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
+                         horizontalalignment='center', verticalalignment='center',
+                         fontsize=14, color='red')
+                fig.tight_layout()
+                fig.savefig(report_dir / "performance_metrics.png", dpi=300, bbox_inches='tight')
+                plt.close(fig)
+            except Exception as inner_e:
+                logger.error(f"Failed to create fallback chart: {inner_e}")
     
     def _validate_performance_data(self, data: Dict[str, Any]) -> None:
         """Validate and fix performance data structure to avoid errors"""
