@@ -47,16 +47,26 @@ class ScrapingReportGenerator:
             Path to the generated report directory
         """
         try:
-            # Create a timestamped directory for this report
+            # Create a directory for this report based on query
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            report_name = f"scraping_report_{timestamp}"
+            
+            # Use query for report name if available, otherwise use timestamp
             if query:
                 # Clean query for filename
                 clean_query = "".join(c if c.isalnum() else "_" for c in query)
-                report_name = f"scraping_report_{clean_query}_{timestamp}"
+                report_name = f"scraping_report_{clean_query}"
+            else:
+                report_name = f"scraping_report_{timestamp}"
             
+            # Check if directory already exists, if so, use it instead of creating a new one
             report_dir = self.output_dir / report_name
-            report_dir.mkdir(exist_ok=True)
+            
+            # If directory exists, we'll update the existing report
+            if report_dir.exists():
+                logger.info(f"Updating existing report in {report_dir}")
+            else:
+                report_dir.mkdir(exist_ok=True)
+                logger.info(f"Creating new report in {report_dir}")
             
             logger.info(f"Generating report in {report_dir}")
             
