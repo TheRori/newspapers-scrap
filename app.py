@@ -29,121 +29,428 @@ app.config['TEMPLATES_AUTO_RELOAD'] = False
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 
-def stream_process(process, queue):
-    article_found_pattern = re.compile(r'Processing article (\d+)/(\d+)')
-    total_pattern = re.compile(r'Processing complete\. (\d+) articles processed')
-    processed_pattern = re.compile(r'Version saved to: (.*?)\.json')
-    results_found_pattern = re.compile(r'Found (\d+) total results for query .*, processing up to (\d+)')
-    date_range_pattern = re.compile(r'Searching for period: (\d{4})-(\d{4}|\d{4})')
-    scope_pattern = re.compile(r'SEARCH_SCOPE: total_years=(\d+)')
-    year_progress_pattern = re.compile(r'YEAR_PROGRESS: current_year=(\d+) total_years=(\d+)')
-    total_years = 1
-    current_year = 0
+class ProcessTracker:
+    def __init__(self):
+        self.process = None
+        self.current_task_index = 0
+        self.search_tasks = []
+        self.search_periods = []
+        self.output_queue = None
+        self.running = False
 
-    try:
-        current_period = None
-        for line in iter(process.stdout.readline, ''):
-            scope_match = scope_pattern.search(line)
-            if scope_match:
-                total_years = int(scope_match.group(1))
-                socketio.emit('search_scope', {
-                    'total_years': total_years
-                })
-                continue
-            if isinstance(line, bytes):
-                line = line.decode('utf-8')
-            line = line.strip()
-            try:
-                print(line)  # Show logs in the Flask terminal
-            except UnicodeEncodeError:
-                print(line.encode('utf-8', errors='replace').decode('ascii',
-                                                                    errors='replace'))  # Safely encode problematic characters
-            year_match = year_progress_pattern.search(line)
-            if year_match:
-                current_year = int(year_match.group(1))
-                total_years = int(year_match.group(2))
+    def start_process(self, cmd, current_period=None):
+        """Start a new process with the given command"""
+        # Add environment variable to use a different log file for subprocesses
+        env = os.environ.copy()
+        env['SUBPROCESS_LOG'] = '1'
 
-                # Emit cumulative progress information
-                socketio.emit('year_progress', {
-                    'current_year': current_year,
-                    'total_years': total_years,
-                    'percentage': int((current_year / total_years) * 100)
-                })
-                continue
-            # Check if line contains information about the date range being searched
-            date_range_match = date_range_pattern.search(line)
-            if date_range_match:
-                current_period = f"{date_range_match.group(1)}-{date_range_match.group(2)}"
-                queue.put(f"Searching period: {current_period}")
-                socketio.emit('period_update', {'period': current_period})
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+            universal_newlines=True,
+            encoding='utf-8',
+            errors='replace',
+            env=env  # Pass the modified environment
+        )
 
-            # Check if line contains information about total results found
-            results_found_match = results_found_pattern.search(line)
-            if results_found_match:
-                total_results = int(results_found_match.group(1))
-                max_articles = int(results_found_match.group(2))
-                queue.put(f"Found {total_results} total results, processing up to {max_articles}")
+        self.process = process
+        self.output_queue = Queue()
 
-                # Emit results count information
-                socketio.emit('results_count', {
-                    'total': total_results,
-                    'max_articles': max_articles,
-                    'period': current_period
-                })
+        thread = Thread(target=self.stream_process, args=(process, self.output_queue))
+        thread.daemon = True
+        thread.start()
 
+        return process
 
-            # When an article is saved, extract path and add to queue
-            processed_match = processed_pattern.search(line)
-            if processed_match:
-                json_path = processed_match.group(1) + '.json'
-                # Send this message to queue to display in web app
-                queue.put(f"Article saved to: {json_path}")
+    def stream_process(self, process, queue):
+        article_found_pattern = re.compile(r'Processing article (\d+)/(\d+)')
+        total_pattern = re.compile(r'Processing complete\. (\d+) articles processed')
+        processed_pattern = re.compile(r'Version saved to: (.*?)\.json')
+        results_found_pattern = re.compile(r'Found (\d+) total results for query .*, processing up to (\d+)')
+        date_range_pattern = re.compile(r'Searching for period: (\d{4})-(\d{4}|\d{4})')
+        scope_pattern = re.compile(r'SEARCH_SCOPE: total_years=(\d+)')
+        year_progress_pattern = re.compile(r'YEAR_PROGRESS: current_year=(\d+) total_years=(\d+)')
+        total_years = 1
+        current_year = 0
 
-                # Also emit using socketio for immediate display
-                socketio.emit('article_saved', {
-                    'path': json_path,
-                    'period': current_period
-                })
+        try:
+            # Get current period directly from self
+            current_period = self.search_periods[self.current_task_index] if self.search_periods else "Default"
 
+            # Calculate base progress percentage for completed tasks
+            base_progress = (self.current_task_index / len(self.search_tasks)) * 100 if self.search_tasks else 0
+            # Calculate how much this task contributes to the total progress
+            task_weight = 1 / len(self.search_tasks) * 100 if self.search_tasks else 100
+
+            for line in iter(process.stdout.readline, ''):
+                scope_match = scope_pattern.search(line)
+                if scope_match:
+                    total_years = int(scope_match.group(1))
+                    socketio.emit('search_scope', {
+                        'total_years': total_years
+                    })
+                    continue
+                if isinstance(line, bytes):
+                    line = line.decode('utf-8')
+                line = line.strip()
                 try:
-                    with open(json_path, 'r', encoding='utf-8') as f:
-                        article_data = json.load(f)
-                        queue.put(f"Article: {article_data.get('title', 'No title')}")
-                        queue.put(
-                            f"Source: {article_data.get('newspaper', 'Unknown')} ({article_data.get('date', 'Unknown')})")
-                        queue.put(f"URL: {article_data.get('url', 'No URL')}")
-                        queue.put("---")
-                except Exception as e:
-                    queue.put(f"Error reading article data: {str(e)}")
+                    print(line)  # Show logs in the Flask terminal
+                except UnicodeEncodeError:
+                    print(line.encode('utf-8', errors='replace').decode('ascii',
+                                                                        errors='replace'))  # Safely encode problematic characters
+                year_match = year_progress_pattern.search(line)
+                if year_match:
+                    current_year = int(year_match.group(1))
+                    total_years = int(year_match.group(2))
 
-            # Process progress information
-            progress_match = article_found_pattern.search(line)
-            if progress_match:
-                current_article = int(progress_match.group(1))
-                total_articles = int(progress_match.group(2))
-                progress = int((current_article / total_articles) * 100)
-                # Add to queue for display in logs
-                queue.put(f"Processing: {current_article}/{total_articles} articles ({progress}%)")
-                # Update progress bar through socketio
-                socketio.emit('progress', {
-                    'value': progress,
-                    'saved': current_article,
-                    'total': total_articles,
-                    'period': current_period
-                })
+                    # Emit cumulative progress information
+                    socketio.emit('year_progress', {
+                        'current_year': current_year,
+                        'total_years': total_years,
+                        'percentage': int((current_year / total_years) * 100)
+                    })
+                    continue
+                # Check if line contains information about the date range being searched
+                date_range_match = date_range_pattern.search(line)
+                if date_range_match:
+                    current_period = f"{date_range_match.group(1)}-{date_range_match.group(2)}"
+                    queue.put(f"Searching period: {current_period}")
+                    socketio.emit('period_update', {'period': current_period})
 
-            complete_match = total_pattern.search(line)
-            if complete_match:
-                saved_articles = int(complete_match.group(1))
-                queue.put(f"Completed processing {saved_articles} articles for period {current_period}")
+                # Check if line contains information about total results found
+                results_found_match = results_found_pattern.search(line)
+                if results_found_match:
+                    total_results = int(results_found_match.group(1))
+                    max_articles = int(results_found_match.group(2))
+                    queue.put(f"Found {total_results} total results, processing up to {max_articles}")
 
-    finally:
-        process.stdout.close()
-        queue.put("Search process completed")
+                    # Emit results count information
+                    socketio.emit('results_count', {
+                        'total': total_results,
+                        'max_articles': max_articles,
+                        'period': current_period
+                    })
+
+                # When an article is saved, extract path and add to queue
+                processed_match = processed_pattern.search(line)
+                if processed_match:
+                    json_path = processed_match.group(1) + '.json'
+                    # Send this message to queue to display in web app
+                    queue.put(f"Article saved to: {json_path}")
+
+                    # Also emit using socketio for immediate display
+                    socketio.emit('article_saved', {
+                        'path': json_path,
+                        'period': current_period
+                    })
+
+                    try:
+                        with open(json_path, 'r', encoding='utf-8') as f:
+                            article_data = json.load(f)
+                            queue.put(f"Article: {article_data.get('title', 'No title')}")
+                            queue.put(
+                                f"Source: {article_data.get('newspaper', 'Unknown')} ({article_data.get('date', 'Unknown')})")
+                            queue.put(f"URL: {article_data.get('url', 'No URL')}")
+                            queue.put("---")
+                    except Exception as e:
+                        queue.put(f"Error reading article data: {str(e)}")
+
+                # Process progress information
+                progress_match = article_found_pattern.search(line)
+                if progress_match:
+                    current_article = int(progress_match.group(1))
+                    total_articles = int(progress_match.group(2))
+
+                    # Task-specific progress (for current year/period)
+                    task_progress = int((current_article / total_articles) * 100)
+
+                    # Calculate overall progress (base progress + weighted current task progress)
+                    current_task_contribution = (task_progress / 100) * task_weight
+                    overall_progress = int(base_progress + current_task_contribution)
+
+                    # Add to queue for display in logs
+                    queue.put(f"Processing: {current_article}/{total_articles} articles ({task_progress}%)")
+
+                    # Update task progress through socketio
+                    socketio.emit('progress', {
+                        'value': task_progress,
+                        'saved': current_article,
+                        'total': total_articles,
+                        'period': current_period
+                    })
+
+                    # Update overall progress
+                    socketio.emit('overall_progress', {
+                        'value': overall_progress,
+                        'current_task': self.current_task_index + 1,
+                        'total_tasks': len(self.search_tasks)
+                    })
+
+                complete_match = total_pattern.search(line)
+                if complete_match:
+                    saved_articles = int(complete_match.group(1))
+                    queue.put(f"Completed processing {saved_articles} articles for period {current_period}")
+
+                    # When a task is complete, emit the updated overall progress
+                    task_complete_progress = int(base_progress + task_weight)
+                    socketio.emit('overall_progress', {
+                        'value': task_complete_progress,
+                        'current_task': self.current_task_index + 1,
+                        'total_tasks': len(self.search_tasks)
+                    })
+
+        finally:
+            process.stdout.close()
+            queue.put("Search process completed")
+
+process_tracker = ProcessTracker()
+
+
+@app.route('/api/search', methods=['POST'])
+def search():
+    global process_tracker
+
+    # Clear the previous state
+    process_tracker.running = False
+    if process_tracker.process and process_tracker.process.poll() is None:
+        try:
+            process_tracker.process.terminate()
+        except:
+            pass
+
+    # Remove the stop signal file if it exists
+    if os.path.exists('stop_signal.txt'):
+        try:
+            os.remove('stop_signal.txt')
+            logger.info("Removed existing stop signal file")
+        except Exception as e:
+            logger.error(f"Error removing stop signal file: {str(e)}")
+
+    data = request.json
+    search_tasks = []  # List to store multiple search tasks
+    search_periods = []  # Store human-readable periods for each task
+
+    # Base command with common parameters
+    base_cmd = [sys.executable, 'scripts/run_search.py', data['query']]
+
+    # Add common parameters
+    if data.get('newspapers'):
+        base_cmd.extend(['--newspapers'] + data['newspapers'].split())
+    if data.get('cantons'):
+        base_cmd.extend(['--cantons'] + data['cantons'].split())
+    if data.get('searches') and data.get('searches') != 'all':
+        base_cmd.extend(['--max_articles', str(data['searches'])])
+
+    # Add correction parameters
+    correction_method = data.get('correction_method', 'none')
+    if correction_method and correction_method != 'none':
+        base_cmd.extend(['--correction', correction_method])
+    else:
+        base_cmd.extend(['--no-correction'])
+
+    # Handle year-by-year search
+    start_year = data.get('start_year')
+    end_year = data.get('end_year')
+
+    if start_year and end_year:
+        start_year = int(start_year)
+        end_year = int(end_year)
+
+        # Create a task for each year
+        for year in range(start_year, end_year + 1):
+            year_cmd = base_cmd.copy()
+            year_cmd.extend(['--date_range', f"{year}-{year}"])
+            search_tasks.append(year_cmd)
+            search_periods.append(f"{year}")
+
+    # If no tasks were created (due to missing parameters), use a default
+    if not search_tasks:
+        search_tasks.append(base_cmd)
+        search_periods.append("Default")
+
+    # Update the process tracker
+    process_tracker.search_tasks = search_tasks
+    process_tracker.search_periods = search_periods
+    process_tracker.current_task_index = 0
+    process_tracker.running = True
+
+    # Send the total number of tasks to the client
+    socketio.emit('search_started', {
+        'total_tasks': len(search_tasks),
+        'periods': search_periods
+    })
+
+    # Start the first task
+    cmd = search_tasks[0]
+    current_period = search_periods[0]
+
+    # Start process using the tracker's method - KEEP ONLY THIS ONE
+    process_tracker.start_process(cmd, current_period)
+
+    socketio.start_background_task(emit_output)
+
+    return jsonify({
+        'status': 'started',
+        'tasks_count': len(search_tasks),
+        'periods': search_periods
+    })
+
+
+def emit_output():
+    global process_tracker
+
+    while process_tracker.running:
+        if process_tracker.process.poll() is not None:  # Check if the current process has finished
+            process_tracker.current_task_index += 1
+
+            # If all tasks are completed
+            if process_tracker.current_task_index >= len(process_tracker.search_tasks):
+                socketio.emit('search_complete', {'status': 'completed'})
+                process_tracker.running = False
+                socketio.sleep(0.1)
+                break
+
+            # Start the next task
+            next_cmd = process_tracker.search_tasks[process_tracker.current_task_index]
+            current_period = process_tracker.search_periods[process_tracker.current_task_index]
+
+            # Emit information about the next task
+            socketio.emit('task_change', {
+                'current_task': process_tracker.current_task_index + 1,
+                'total_tasks': len(process_tracker.search_tasks),
+                'period': current_period
+            })
+
+            # Calculate overall progress (based on completed tasks)
+            overall_progress = int((process_tracker.current_task_index / len(process_tracker.search_tasks)) * 100)
+
+            # Start the next process using the helper method
+            process_tracker.start_process(next_cmd, current_period)
+
+            # Update progress with overall progress value
+            socketio.emit('overall_progress', {
+                'value': overall_progress,
+                'current_task': process_tracker.current_task_index + 1,
+                'total_tasks': len(process_tracker.search_tasks)
+            })
+
+            # Continue processing output
+            continue
+
+        try:
+            if process_tracker.output_queue:
+                try:
+                    line = process_tracker.output_queue.get(timeout=0.1)
+                    if line:
+                        socketio.emit('log_message', {'message': line})
+                        socketio.sleep(0)
+                except Empty:
+                    socketio.sleep(0.1)
+        except Exception as e:
+            logger.error(f"Error in emit_output: {str(e)}")
+            socketio.sleep(0.1)
 
 
 import os
 from flask import send_from_directory, abort
+
+
+@app.route('/api/correct/<topic>/<filename>', methods=['POST'])
+def correct_file(topic, filename):
+    """API endpoint to apply spelling correction to a file."""
+    file_path = os.path.join('data', 'by_topic', topic, filename)
+
+    if not os.path.exists(file_path) or not file_path.endswith('.json'):
+        return jsonify({'error': 'File not found'}), 404
+
+    try:
+        # Read the correction method from the request
+        data = request.json
+        correction_method = data.get('correction_method', 'symspell')
+
+        # Load the article data
+        with open(file_path, 'r', encoding='utf-8') as f:
+            article_data = json.load(f)
+
+        # Ensure original content is stored
+        if 'original_content' not in article_data and 'content' in article_data:
+            article_data['original_content'] = article_data['content']
+
+        original_content = article_data.get('original_content', '')
+        if not original_content:
+            return jsonify({'error': 'No content available for correction'}), 400
+
+        # Apply the selected correction method
+        if correction_method == 'symspell':
+            from newspapers_scrap.data_manager.ocr_cleaner.symspell_checker import SpellCorrector
+            corrector = SpellCorrector(language='fr')
+            corrected_text = corrector.correct_text_sym(original_content)
+            article_data.update({
+                'content': corrected_text,
+                'spell_corrected': True,
+                'correction_method': 'symspell'
+            })
+        elif correction_method == 'mistral':
+            from newspapers_scrap.data_manager.ocr_cleaner.mistral_checker import correct_text_ai
+            import tempfile
+
+            # Use temporary files for Mistral correction
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as temp_in:
+                temp_in.write(original_content)
+                input_path = temp_in.name
+
+            output_path = input_path + '_corrected'
+            if correct_text_ai(input_path, output_path):
+                with open(output_path, 'r', encoding='utf-8') as f:
+                    corrected_text = f.read()
+                article_data.update({
+                    'content': corrected_text,
+                    'spell_corrected': True,
+                    'correction_method': 'mistral'
+                })
+                os.unlink(output_path)  # Clean up
+            else:
+                return jsonify({'error': 'Mistral correction failed'}), 500
+
+            os.unlink(input_path)  # Clean up
+        else:
+            return jsonify({'error': 'Invalid correction method'}), 400
+
+        # Update word count
+        article_data['word_count'] = len(article_data['content'].split())
+
+        # Save the updated file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(article_data, f, ensure_ascii=False, indent=4)
+
+        # Create a new version of the article
+        version_id = f"{article_data['id']}_{correction_method}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        base_id = article_data.get('base_id') or article_data.get('id')
+        versions_dir = Path('data') / 'processed' / 'versions' / base_id
+        versions_dir.mkdir(exist_ok=True, parents=True)
+
+        version_data = article_data.copy()
+        version_data.update({
+            'id': version_id,
+            'base_id': base_id,
+            'created_at': datetime.now().isoformat()
+        })
+
+        version_path = versions_dir / f"{version_id}.json"
+        with open(version_path, 'w', encoding='utf-8') as f:
+            json.dump(version_data, f, ensure_ascii=False, indent=4)
+
+        return jsonify({
+            'success': True,
+            'word_count': article_data['word_count'],
+            'correction_method': correction_method
+        })
+
+    except Exception as e:
+        logger.error(f"Error correcting file {file_path}: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 
 # Add this route to browse topics and files
@@ -598,243 +905,6 @@ def get_file_content(topic, filename):
 @app.route('/')
 def index():
     return render_template('index.html')
-
-
-@app.route('/api/stop_search', methods=['POST'])
-def stop_search():
-    """Stop the currently running search process"""
-    global current_process, current_scraper
-    
-    logger.info("Stop search request received")
-    
-    try:
-        # Try to stop the scraper if it exists
-        if current_scraper:
-            logger.info("Requesting scraper to stop")
-            current_scraper.stop_requested = True
-            
-        # Try to terminate the process if it exists
-        if current_process and current_process.poll() is None:
-            logger.info(f"Terminating process {current_process.pid}")
-            
-            try:
-                # On Windows, we need to use the process ID
-                pid = current_process.pid
-                parent = psutil.Process(pid)
-                
-                # Kill child processes first
-                children = parent.children(recursive=True)
-                for child in children:
-                    logger.info(f"Terminating child process {child.pid}")
-                    child.terminate()
-                
-                # Then terminate the parent
-                parent.terminate()
-                
-                socketio.emit('log_message', {'message': "Recherche arrêtée par l'utilisateur"})
-                socketio.emit('search_complete', {'status': 'stopped'})
-                
-                return jsonify({'status': 'success', 'message': 'Recherche arrêtée'})
-            except Exception as e:
-                logger.error(f"Error terminating process: {str(e)}")
-                return jsonify({'status': 'error', 'message': str(e)}), 500
-        else:
-            # Même si le processus n'est pas trouvé, on peut quand même essayer d'arrêter le scraper
-            # via un fichier signal
-            try:
-                # Créer un fichier signal que le script run_search.py pourra détecter
-                with open('stop_signal.txt', 'w') as f:
-                    f.write(f"Stop requested at {datetime.now().isoformat()}")
-                logger.info("Created stop signal file")
-                
-                socketio.emit('log_message', {'message': "Signal d'arrêt envoyé"})
-                return jsonify({'status': 'success', 'message': 'Signal d\'arrêt envoyé'}), 200
-            except Exception as e:
-                logger.error(f"Error creating stop signal: {str(e)}")
-                return jsonify({'status': 'error', 'message': str(e)}), 500
-    except Exception as e:
-        logger.error(f"Error in stop_search: {str(e)}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-
-@app.route('/api/search', methods=['POST'])
-def search():
-    global current_process, current_scraper
-    
-    # Supprimer le fichier signal s'il existe
-    if os.path.exists('stop_signal.txt'):
-        try:
-            os.remove('stop_signal.txt')
-            logger.info("Removed existing stop signal file")
-        except Exception as e:
-            logger.error(f"Error removing stop signal file: {str(e)}")
-    
-    data = request.json
-    search_tasks = []  # List to store multiple search tasks
-    search_periods = []  # Store human-readable periods for each task
-
-    # Base command with common parameters
-    base_cmd = [sys.executable, 'scripts/run_search.py', data['query']]
-
-    # Add common parameters
-    if data.get('newspapers'):
-        base_cmd.extend(['--newspapers'] + data['newspapers'].split())
-    if data.get('cantons'):
-        base_cmd.extend(['--cantons'] + data['cantons'].split())
-    if data.get('searches') and data.get('searches') != 'all':
-        base_cmd.extend(['--max_articles', str(data['searches'])])
-
-    # Add correction parameters
-    correction_method = data.get('correction_method', 'none')
-    if correction_method and correction_method != 'none':
-        base_cmd.extend(['--correction', correction_method])
-    else:
-        base_cmd.extend(['--no-correction'])
-
-    # Handle different search strategies
-    search_by = data.get('search_by', 'year')
-    if search_by == 'year':
-        start_year = data.get('start_year')
-        end_year = data.get('end_year')
-
-        if start_year and end_year:
-            start_year = int(start_year)
-            end_year = int(end_year)
-
-            # Split the search into decades and individual years
-            current_decade_start = start_year - (start_year % 10)
-
-            # Process each decade
-            while current_decade_start < end_year:
-                decade_end = min(current_decade_start + 9, end_year)
-
-                # If this decade is fully within our range, search it as a decade
-                if current_decade_start >= start_year and decade_end <= end_year:
-                    decade_cmd = base_cmd.copy()
-                    decade_cmd.extend(['--date_range', f"{current_decade_start}-{decade_end}"])
-                    search_tasks.append(decade_cmd)
-                    search_periods.append(f"{current_decade_start}-{decade_end}")
-                # Otherwise, search year by year for partial decades
-                else:
-                    for year in range(max(current_decade_start, start_year), min(decade_end + 1, end_year + 1)):
-                        year_cmd = base_cmd.copy()
-                        year_cmd.extend(['--date_range', f"{year}-{year}"])
-                        search_tasks.append(year_cmd)
-                        search_periods.append(f"{year}")
-
-                current_decade_start += 10
-    elif search_by == 'decade':
-        decade = data.get('decade')
-        if decade:
-            cmd = base_cmd.copy()
-            cmd.extend(['--decade', decade])
-            search_tasks.append(cmd)
-            search_periods.append(decade)
-    elif search_by == 'all_time':
-        cmd = base_cmd.copy()
-        cmd.extend(['--all_time'])
-        search_tasks.append(cmd)
-        search_periods.append("All time")
-
-    # If no tasks were created (due to missing parameters), use a default
-    if not search_tasks:
-        search_tasks.append(base_cmd)
-        search_periods.append("Default")
-
-    # Send the total number of tasks to the client
-    socketio.emit('search_started', {
-        'total_tasks': len(search_tasks),
-        'periods': search_periods
-    })
-    
-    # Only run the first task for now
-    # In a future implementation, you could run them sequentially or in parallel
-    cmd = search_tasks[0]
-    current_period = search_periods[0]
-
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        bufsize=1,
-        universal_newlines=True,
-        encoding='utf-8',
-        errors='replace'
-    )
-
-    output_queue = Queue()
-    thread = Thread(target=stream_process, args=(process, output_queue))
-    thread.daemon = True
-    thread.start()
-
-    def emit_output():
-        nonlocal process  # Declare process as nonlocal at the beginning of the function
-        current_task_index = 0
-        total_tasks = len(search_tasks)
-        
-        while current_task_index < total_tasks:
-            if process.poll() is not None and output_queue.empty():
-                current_task_index += 1
-                
-                # If we've completed all tasks
-                if current_task_index >= total_tasks:
-                    socketio.emit('search_complete', {'status': 'completed'})
-                    socketio.sleep(0.1)
-                    break
-                
-                # Start the next task
-                next_cmd = search_tasks[current_task_index]
-                next_period = search_periods[current_task_index]
-                
-                # Emit information about the next task
-                socketio.emit('task_change', {
-                    'current_task': current_task_index + 1,
-                    'total_tasks': total_tasks,
-                    'period': next_period
-                })
-                
-                # Start the next process
-                process = subprocess.Popen(
-                    next_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    bufsize=1,
-                    universal_newlines=True,
-                    encoding='utf-8',
-                    errors='replace'
-                )
-                
-                # Reset progress for the new task
-                socketio.emit('progress', {
-                    'value': 0,
-                    'saved': 0,
-                    'total': 0,
-                    'current_task': current_task_index + 1,
-                    'total_tasks': total_tasks
-                })
-                
-                # Continue processing output
-                continue
-                
-            try:
-                line = output_queue.get(timeout=0.1)
-                if line:
-                    socketio.emit('log_message', {'message': line})
-                    socketio.sleep(0)
-            except Empty:
-                socketio.sleep(0.1)
-                continue
-            except Exception as e:
-                logger.error(f"Error in emit_output: {str(e)}")
-                socketio.sleep(0.1)
-                continue
-
-    socketio.start_background_task(emit_output)
-    return jsonify({
-        'status': 'started', 
-        'tasks_count': len(search_tasks),
-        'periods': search_periods
-    })
 
 
 def get_article_versions(base_id):

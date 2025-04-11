@@ -19,35 +19,39 @@ function stopSearch() {
             'Content-Type': 'application/json'
         }
     })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Stop search response:', data);
-        if (data.status === 'success') {
-            logContainer.innerHTML += '<p class="log-entry text-danger">Recherche arrêtée par l\'utilisateur</p>';
+        .then(response => response.json())
+        .then(data => {
+            console.log('Stop search response:', data);
+            if (data.status === 'success') {
+                logContainer.innerHTML += '<p class="log-entry text-danger">Recherche arrêtée par l\'utilisateur</p>';
+                logContainer.scrollTop = logContainer.scrollHeight;
+            } else {
+                logContainer.innerHTML += `<p class="log-entry text-danger">Erreur lors de l'arrêt: ${data.message}</p>`;
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        })
+        .catch(error => {
+            console.error('Error stopping search:', error);
+            logContainer.innerHTML += `<p class="log-entry text-danger">Erreur lors de l'arrêt: ${error}</p>`;
             logContainer.scrollTop = logContainer.scrollHeight;
-        } else {
-            logContainer.innerHTML += `<p class="log-entry text-danger">Erreur lors de l'arrêt: ${data.message}</p>`;
-            logContainer.scrollTop = logContainer.scrollHeight;
-        }
-    })
-    .catch(error => {
-        console.error('Error stopping search:', error);
-        logContainer.innerHTML += `<p class="log-entry text-danger">Erreur lors de l'arrêt: ${error}</p>`;
-        logContainer.scrollTop = logContainer.scrollHeight;
-    });
+        });
 }
 
 let totalYears = 1;
 let currentYear = 0;
 
-// Update the overall progress bar
-function updateOverallProgress(currentYear, totalYears) {
-    const overallPercentage = Math.floor((currentYear / totalYears) * 100);
+
+socket.on('overall_progress', function (data) {
+    // Update the overall progress bar
     const overallProgressBar = document.getElementById('overallProgress');
-    overallProgressBar.style.width = `${overallPercentage}%`;
-    overallProgressBar.textContent = `${overallPercentage}%`;
-    overallProgressBar.setAttribute('aria-valuenow', overallPercentage);
-}
+    overallProgressBar.style.width = `${data.value}%`;
+    overallProgressBar.textContent = `${data.value}%`;
+    overallProgressBar.setAttribute('aria-valuenow', data.value);
+
+    // Update the overall progress text
+    document.getElementById('overallProgressText').textContent =
+        `Task ${data.current_task} of ${data.total_tasks} (${data.value}% overall)`;
+});
 
 socket.on('log_message', function (data) {
     const logEntry = document.createElement('p');
@@ -76,19 +80,16 @@ socket.on('results_count', function (data) {
     $('#resultsCountText').text(countText);
 });
 
-socket.on('year_progress', function(data) {
+socket.on('year_progress', function (data) {
     currentYear = data.current_year;
     totalYears = data.total_years;
-
-    // Update the overall progress bar
-    updateOverallProgress(currentYear, totalYears);
 
     // Display which year we're on
     document.getElementById('overallProgressText').textContent =
         `Processing year ${currentYear} of ${totalYears}`;
 });
 
-socket.on('progress', function(data) {
+socket.on('progress', function (data) {
     // Update the per-year progress bar
     progressBar.style.width = `${data.value}%`;
     progressBar.textContent = `${data.value}%`;
@@ -96,65 +97,65 @@ socket.on('progress', function(data) {
     progressText.textContent = `Processing articles: ${data.saved} / ${data.total}`;
 });
 
-socket.on('period_update', function(data) {
+socket.on('period_update', function (data) {
     document.getElementById('currentPeriodText').textContent = data.period || '-';
 });
 
 // Listen for search_started event to initialize task tracking
-socket.on('search_started', function(data) {
+socket.on('search_started', function (data) {
     console.log('Search started:', data);
-    
+
     // Initialize task tracking with the total number of tasks
     totalTasks = data.total_tasks || 1;
     currentTaskIndex = 0;
     completedTasks = 0;
     searchPeriods = data.periods || [];
-    
+
     // Update the current task text
     document.getElementById('currentTaskText').textContent = `(Task 1/${totalTasks})`;
-    
+
     // If we have periods, update the current period text
     if (searchPeriods.length > 0) {
         document.getElementById('currentPeriodText').textContent = searchPeriods[0] || '-';
     }
-    
+
     // Update the overall progress text
-    document.getElementById('overallProgressText').textContent = 
+    document.getElementById('overallProgressText').textContent =
         `Task 1 of ${totalTasks} (0% complete)`;
 });
 
-socket.on('task_change', function(data) {
+socket.on('task_change', function (data) {
     console.log('Task change:', data);
-    
+
     // Mark the previous task as completed
     if (currentTaskIndex >= 0) {
         completedTasks++;
     }
-    
+
     // Update task tracking
     currentTaskIndex = data.current_task - 1;
-    
+
     // Don't override the total tasks if we already know it
     if (data.total_tasks && (!totalTasks || totalTasks < data.total_tasks)) {
         totalTasks = data.total_tasks;
     }
-    
+
     // Update the current period text
     document.getElementById('currentPeriodText').textContent = data.period || '-';
-    
+
     // Update the current task text
     document.getElementById('currentTaskText').textContent = `(Task ${data.current_task}/${totalTasks})`;
-    
+
     // Reset the current task progress bar
     progressBar.style.width = '0%';
     progressBar.textContent = '0%';
     progressBar.setAttribute('aria-valuenow', 0);
-    
+
     // Update the progress text
     progressText.textContent = 'Starting new period...';
-    
-    // Update the overall progress
-    updateOverallProgress();
+
+    // Note: We don't update overall progress here anymore,
+    // as it will be handled by the overall_progress event
 });
 
 socket.on('search_complete', function (data) {
@@ -164,25 +165,24 @@ socket.on('search_complete', function (data) {
     searchBtn.textContent = 'Search';
     stopBtn.disabled = true;
     progressBar.classList.remove('progress-bar-animated');
-    
+
     // Mark all tasks as completed
     completedTasks = totalTasks;
-    
+
     // Update the overall progress to 100%
     const overallProgressBar = document.getElementById('overallProgress');
     overallProgressBar.style.width = '100%';
     overallProgressBar.textContent = '100%';
     overallProgressBar.setAttribute('aria-valuenow', 100);
-    
-    document.getElementById('overallProgressText').textContent = 
+
+    document.getElementById('overallProgressText').textContent =
         `All ${totalTasks} tasks completed (100%)`;
 });
 
 // Add event listeners for our new messages
-socket.on('search_scope', function(data) {
+socket.on('search_scope', function (data) {
     totalYears = data.total_years;
     // Reset the overall progress bar
-    updateOverallProgress(0, totalYears);
 });
 
 function updateDateInputs() {
@@ -232,24 +232,24 @@ document.getElementById('searchForm').addEventListener('submit', function (e) {
     console.log("Search form submitted");
     logContainer.innerHTML = '';
     progressCard.style.display = 'block';
-    
+
     // Reset progress bars
     progressBar.style.width = '0%';
     progressBar.textContent = '0%';
     progressBar.setAttribute('aria-valuenow', 0);
     progressBar.classList.add('progress-bar-animated');
     progressText.textContent = 'Processing articles: 0 / 0';
-    
+
     const overallProgressBar = document.getElementById('overallProgress');
     overallProgressBar.style.width = '0%';
     overallProgressBar.textContent = '0%';
     overallProgressBar.setAttribute('aria-valuenow', 0);
     document.getElementById('overallProgressText').textContent = 'Starting search...';
-    
+
     // Reset period text
     document.getElementById('currentPeriodText').textContent = '-';
     document.getElementById('currentTaskText').textContent = '';
-    
+
     // Reset task tracking
     currentTaskIndex = 0;
     completedTasks = 0;
@@ -264,10 +264,10 @@ document.getElementById('searchForm').addEventListener('submit', function (e) {
     // Create the form data object
     const formData = {
         query: document.getElementById('query').value,
-        newspapers: document.getElementById('newspapers').value,
-        cantons: document.getElementById('cantons').value,
+        cantons: document.getElementById('cantons').value, // This will now get the selected canton code
         correction_method: document.getElementById('correction_method').value,
-        search_by: document.getElementById('search_by').value
+        search_by: document.getElementById('search_by').value,
+        laq: 'fr'
     };
 
     // Only add the searches parameter if it's not "all"
@@ -306,7 +306,7 @@ document.getElementById('searchForm').addEventListener('submit', function (e) {
         .then(response => response.json())
         .then(data => {
             console.log('Search API response:', data);
-            
+
             // The task tracking information will now be handled by the search_started event
         })
         .catch(error => {

@@ -26,14 +26,16 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="mb-3">
-                            <label for="newspapers" class="form-label">Newspapers</label>
-                            <input type="text" class="form-control" id="newspapers" placeholder="LLE JDG">
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="mb-3">
                             <label for="cantons" class="form-label">Cantons</label>
-                            <input type="text" class="form-control" id="cantons" placeholder="GE FR">
+                            <select class="form-select" id="cantons">
+                                <option value="">All Cantons</option>
+                                <option value="FR">Fribourg (FR)</option>
+                                <option value="VD">Vaud (VD)</option>
+                                <option value="GE">Genève (GE)</option>
+                                <option value="JU">Jura (JU)</option>
+                                <option value="NE">Neuchatel (NE)</option>
+                                <option value="VS">Valais (VS)</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -140,7 +142,7 @@
                     </div>
                     <p class="text-center mt-2 mb-0" id="overallProgressText">Waiting to start...</p>
                 </div>
-                
+
                 <!-- Current task progress -->
                 <div>
                     <h6 class="mb-2">Current Period: <span id="currentPeriodText">-</span></h6>

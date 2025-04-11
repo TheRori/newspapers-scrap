@@ -1,6 +1,13 @@
 # logging_config.py
 import logging
 from logging.handlers import RotatingFileHandler
+import os
+
+
+is_subprocess = os.environ.get('SUBPROCESS_LOG') == '1'
+
+# Use a different log file name for subprocesses
+log_file = 'subprocess.log' if is_subprocess else 'application.log'
 
 # Configure the log format
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')

@@ -183,7 +183,7 @@ class NewspaperScraper:
                     return None
 
     async def search(self, query: str, page: int = 1, newspapers: List[str] = None,
-                     cantons: List[str] = None, decade: str = None, year: str = None) -> Dict[str, Any]:
+                     cantons: List[str] = None, decade: str = None, year: str = None, laq: str = 'fr') -> Dict[str, Any]:
         """
         Search for articles and extract results from specified newspapers and cantons
 
@@ -194,6 +194,7 @@ class NewspaperScraper:
             cantons: List of canton codes to restrict the search to
             decade: Decade to search (e.g., "197" for 1970s)
             year: Specific year to search (e.g., "1975")
+            laq: Language of the query (default is 'fr' for French)
 
         Returns:
             Dictionary containing articles and total_results count
@@ -204,7 +205,7 @@ class NewspaperScraper:
             'hs': search_params.hs,
             'results': search_params.results,
             'txq': query,
-            'l': 'de'
+            'laq': laq
         }
 
         # Calculate the starting result index for pagination
@@ -227,6 +228,7 @@ class NewspaperScraper:
         # Add year filter if specified (e.g., '1975')
         if year:
             params['yeq'] = year
+
 
         query_string = '&'.join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items()])
         search_url = f"{self.base_url}/?{query_string}"
@@ -348,7 +350,7 @@ class NewspaperScraper:
     async def save_articles_from_search(self, query: str, output_dir: str = None,
                                         max_articles: int = None, newspapers: List[str] = None,
                                         cantons: List[str] = None, decade: str = None,
-                                        year: str = None, generate_report: bool = True) -> List[Dict[str, Any]]:
+                                        year: str = None, generate_report: bool = True,laq: str = 'fr') -> List[Dict[str, Any]]:
         """
         Search for articles, extract their content, and save using the organizer
 
@@ -361,6 +363,7 @@ class NewspaperScraper:
             decade: Decade to search (e.g., "197" for 1970s)
             year: Specific year to search (e.g., "1975")
             generate_report: Whether to generate a visual performance report
+            laq: Language of the query (default is 'fr' for French)
 
         Returns:
             List of article metadata
@@ -382,7 +385,8 @@ class NewspaperScraper:
                 'query': query,
                 'page': page,
                 'newspapers': newspapers,
-                'cantons': cantons
+                'cantons': cantons,
+                'laq': laq
             }
 
             # Add decade or year filter if specified

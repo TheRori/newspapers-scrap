@@ -431,57 +431,58 @@
             });
         }
         
-        function applyCorrection(method) {
-            // Show loading status
-            correctionStatus.style.display = 'block';
-            correctionStatus.innerHTML = '<div style="color: #007bff;">Applying correction, please wait...</div>';
-            
-            // Get current topic and filename from URL
-            const pathParts = window.location.pathname.split('/');
-            let topic, filename;
-            
-            if (pathParts.includes('browse')) {
-                // Regular file view
-                topic = pathParts[pathParts.indexOf('browse') + 1];
-                filename = pathParts[pathParts.indexOf('browse') + 2];
-            } else if (pathParts.includes('version')) {
-                // Version view - we need to redirect after correction
-                alert('Cannot apply corrections to version views. Please go to the main article view.');
-                correctionStatus.style.display = 'none';
-                return;
-            }
-            
-            // Make API request to apply correction
-            fetch(`/api/correct/${topic}/${filename}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    correction_method: method
-                })
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
-            .then(data => {
-                // Update status
-                correctionStatus.innerHTML = `<div style="color: #28a745;">Correction applied successfully! Word count: ${data.word_count}</div>`;
-                
-                // Reload the page to show the updated content
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1500);
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                correctionStatus.innerHTML = `<div style="color: #dc3545;">Error applying correction: ${error.message}</div>`;
+function applyCorrection(method) {
+    // Show loading status
+    correctionStatus.style.display = 'block';
+    correctionStatus.innerHTML = '<div style="color: #007bff;">Applying correction, please wait...</div>';
+
+    // Get current topic and filename from URL
+    const pathParts = window.location.pathname.split('/');
+    let topic, filename;
+
+    if (pathParts.includes('browse')) {
+        // Regular file view
+        topic = pathParts[pathParts.indexOf('browse') + 1];
+        filename = pathParts[pathParts.indexOf('browse') + 2];
+    } else if (pathParts.includes('version')) {
+        // Version view - we need to redirect after correction
+        alert('Cannot apply corrections to version views. Please go to the main article view.');
+        correctionStatus.style.display = 'none';
+        return;
+    }
+
+    // Make API request to apply correction
+    fetch(`/api/correct/${topic}/${filename}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            correction_method: method
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => {
+                throw new Error(err.error || 'Error applying correction');
             });
         }
+        return response.json();
+    })
+    .then(data => {
+        // Update status
+        correctionStatus.innerHTML = `<div style="color: #28a745;">Correction applied successfully! Word count: ${data.word_count}</div>`;
+
+        // Reload the page to show the updated content
+        setTimeout(() => {
+            window.location.reload();
+        }, 1500);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        correctionStatus.innerHTML = `<div style="color: #dc3545;">Error applying correction: ${error.message}</div>`;
     });
+}    });
 </script>
 </body>
 </html>

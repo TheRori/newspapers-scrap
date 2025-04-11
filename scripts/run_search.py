@@ -23,6 +23,7 @@ from newspapers_scrap.security import ProxyManager
 # Variable globale pour stocker le scraper
 current_scraper = None
 
+
 # Define the log_search_period function before it's used
 def log_search_period(args):
     """Log the search period for detection by app.py stream_process function"""
@@ -32,6 +33,8 @@ def log_search_period(args):
         print(f"Searching for period: {args.decade}")
     elif args.all_time:
         print("Searching for period: All time")
+
+
 def log_search_period(args):
     """Log the search period for detection by app.py stream_process function"""
     if args.date_range:
@@ -40,6 +43,7 @@ def log_search_period(args):
         print(f"Searching for period: {args.decade}")
     elif args.all_time:
         print("Searching for period: All time")
+
 
 # Fonction pour vérifier si un signal d'arrêt a été reçu
 def check_stop_signal():
@@ -60,6 +64,8 @@ async def async_main():
     parser.add_argument('--output', type=str, help='Output directory to save articles', default=None)
     parser.add_argument('--max_articles', type=int, help='Maximum articles to retrieve', default=None)
     parser.add_argument('--proxies', type=str, default=None, help='Path to JSON file with proxy configurations')
+    parser.add_argument('--laq', type=str, default='fr',
+                        help='Language for search query (default: fr)')
     parser.add_argument('--cantons', type=str, nargs='+', help='Canton codes to search')
     parser.add_argument('--date_range', type=str, help='Date range in format YYYY-YYYY')
     parser.add_argument('--search_by', choices=['year', 'decade'], default='year',
@@ -121,7 +127,8 @@ async def async_main():
                     output_dir=args.output,
                     max_articles=args.max_articles,
                     newspapers=args.newspapers,
-                    cantons=args.cantons
+                    cantons=args.cantons,
+                    laq = args.laq
                 )
             except Exception as e:
                 logger.error(f"Error in search: {e}")
@@ -154,7 +161,6 @@ async def async_main():
                             completed_years += 1
                             print(f"YEAR_PROGRESS: current_year={completed_years} total_years={total_years}")
 
-
                             try:
                                 current_scraper = NewspaperScraper(
                                     apply_spell_correction=not args.no_correction,
@@ -165,7 +171,7 @@ async def async_main():
                                 if check_stop_signal():
                                     logger.info("Stopping search due to stop signal")
                                     break
-                                
+
                                 # Search for the entire decade
                                 decade_results = await current_scraper.save_articles_from_search(
                                     query=args.query,
@@ -173,7 +179,8 @@ async def async_main():
                                     max_articles=args.max_articles,
                                     newspapers=args.newspapers,
                                     cantons=args.cantons,
-                                    decade=decade
+                                    decade=decade,
+                                    laq = args.laq
                                 )
 
                                 if decade_results:
@@ -204,7 +211,7 @@ async def async_main():
                                 if check_stop_signal():
                                     logger.info("Stopping search due to stop signal")
                                     break
-                                    
+
                                 # Search for a specific year
                                 year_results = await current_scraper.save_articles_from_search(
                                     query=args.query,
@@ -212,7 +219,8 @@ async def async_main():
                                     max_articles=args.max_articles,
                                     newspapers=args.newspapers,
                                     cantons=args.cantons,
-                                    year=str(year)
+                                    year=str(year),
+                                    laq = args.laq
                                 )
 
                                 if year_results:
@@ -241,13 +249,14 @@ async def async_main():
                     if check_stop_signal():
                         logger.info("Stopping search due to stop signal")
                         return
-                        
+
                     results = await current_scraper.save_articles_from_search(
                         query=args.query,
                         output_dir=args.output,
                         max_articles=args.max_articles,
                         newspapers=args.newspapers,
-                        cantons=args.cantons
+                        cantons=args.cantons,
+                        laq = args.laq
                     )
                 except Exception as e:
                     logger.error(f"Error in search: {e}")
