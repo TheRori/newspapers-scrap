@@ -6,6 +6,8 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from utils.file import read_json_file, write_json_file, ensure_directory
+
 logger = logging.getLogger(__name__)
 
 
@@ -93,15 +95,17 @@ def save_corrected_article(file_path, article_data, corrected_text, correction_m
             'word_count': len(corrected_text.split())
         })
 
-        # Sauvegarder le fichier mis à jour
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(article_data, f, ensure_ascii=False, indent=4)
+        # Sauvegarder le fichier mis à jour en utilisant notre fonction utilitaire
+        if not write_json_file(file_path, article_data):
+            return False, 0, None
 
         # Créer une nouvelle version de l'article
         version_id = f"{article_data['id']}_{correction_method}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
         base_id = article_data.get('base_id') or article_data.get('id')
         versions_dir = Path('data') / 'processed' / 'versions' / base_id
-        versions_dir.mkdir(exist_ok=True, parents=True)
+
+        # Assurer que le répertoire existe
+        ensure_directory(versions_dir)
 
         version_data = article_data.copy()
         version_data.update({
@@ -111,8 +115,9 @@ def save_corrected_article(file_path, article_data, corrected_text, correction_m
         })
 
         version_path = versions_dir / f"{version_id}.json"
-        with open(version_path, 'w', encoding='utf-8') as f:
-            json.dump(version_data, f, ensure_ascii=False, indent=4)
+        # Utilisation de la fonction utilitaire pour écrire le fichier
+        if not write_json_file(version_path, version_data):
+            return False, 0, None
 
         logger.info(f"Version sauvegardée: {version_path}")
 
@@ -140,17 +145,17 @@ def get_article_versions(base_id):
     versions = []
     for version_file in versions_dir.glob('*.json'):
         try:
-            with open(version_file, 'r', encoding='utf-8') as f:
-                version_data = json.load(f)
-                versions.append({
-                    'id': version_data['id'],
-                    'correction_method': version_data.get('correction_method', 'none'),
-                    'language': version_data.get('language', 'fr'),
-                    'word_count': version_data.get('word_count', 0),
-                    'created_at': version_data.get('created_at', ''),
-                    'path': str(version_file)
-                })
-        except (json.JSONDecodeError, KeyError) as e:
+            # Utilisation de notre fonction utilitaire pour lire le fichier JSON
+            version_data = read_json_file(version_file)
+            versions.append({
+                'id': version_data['id'],
+                'correction_method': version_data.get('correction_method', 'none'),
+                'language': version_data.get('language', 'fr'),
+                'word_count': version_data.get('word_count', 0),
+                'created_at': version_data.get('created_at', ''),
+                'path': str(version_file)
+            })
+        except (json.JSONDecodeError, KeyError, FileNotFoundError) as e:
             logger.warning(f"Erreur lors de la lecture du fichier de version {version_file}: {str(e)}")
 
     # Trier les versions par date de création (plus récentes en premier)
@@ -173,9 +178,8 @@ def process_article_correction(file_path, correction_method):
         return False, "Fichier non trouvé", None
 
     try:
-        # Charger les données de l'article
-        with open(file_path, 'r', encoding='utf-8') as f:
-            article_data = json.load(f)
+        # Charger les données de l'article avec notre fonction utilitaire
+        article_data = read_json_file(file_path)
 
         # Appliquer la correction
         corrected_text, success = correct_article_content(article_data, correction_method)

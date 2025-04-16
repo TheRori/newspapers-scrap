@@ -256,7 +256,7 @@
         {{ error }}
     </div>
     {% else %}
-    <a href="{{ url_for('browse_topics') }}" class="back-link">← Back to Topics</a>
+    <a href="{{ url_for('browse.browse_topics') }}" class="back-link">← Back to Topics</a>
 
     <div class="file-header">
         <h1>{{ title }}</h1>
@@ -304,7 +304,7 @@
         <div class="versions-list">
             {% for version in versions %}
             <div class="version-item {% if version.id == current_version_id %}current{% endif %}">
-                <a href="{{ url_for('view_version', version_id=version.id) }}">
+                <a href="{{ url_for('version.view_version', version_id=version.id) }}">
                     {{ version.correction_method }}{% if version.language != 'fr' %} ({{ version.language }}){%
                     endif %}
                 </a>

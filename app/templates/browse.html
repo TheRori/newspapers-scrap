@@ -1,12 +1,35 @@
-<!-- templates/topic_results.html -->
+<!-- templates/browse.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ topic_name }} - Articles</title>
+    <title>Browse Articles by Topic</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
+        .show-more {
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        .show-more-link, .show-less-link {
+            display: inline-block;
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 0.9em;
+        }
+
+        .show-more-link:hover, .show-less-link:hover {
+            background-color: #0069d9;
+        }
+
+        .topic-section.expanded {
+            border-left: 3px solid #007bff;
+        }
+
         .filter-section {
             margin-bottom: 20px;
             padding: 15px;
@@ -81,9 +104,22 @@
             font-size: 0.85em;
         }
 
+        .topic-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .topic-title {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
         .file-list {
             list-style-type: none;
-            padding-left: 0;
+            padding-left: 10px;
         }
 
         .file-item {
@@ -120,6 +156,11 @@
             margin-right: 10px;
         }
 
+        .empty-topic {
+            color: #6c757d;
+            font-style: italic;
+        }
+
         .error-message {
             padding: 15px;
             color: #721c24;
@@ -142,16 +183,6 @@
             text-decoration: none;
             padding: 5px 10px;
         }
-
-        .back-link {
-            margin-bottom: 15px;
-            display: inline-block;
-        }
-
-        .result-count {
-            margin-bottom: 15px;
-            color: #6c757d;
-        }
     </style>
 </head>
 <body>
@@ -161,13 +192,9 @@
 </div>
 
 <div class="container">
-    <a href="{{ url_for('browse_topics', filter_word=filter_word, date_from=date_from, date_to=date_to, min_words=min_words, max_words=max_words) }}"
-       class="back-link">← Back to all topics</a>
-
-    <h1>{{ topic_name }}</h1>
-
+    <h1>Browse Articles by Topic</h1>
     <div class="filter-section">
-        <form action="{{ url_for('topic_results', topic_name=topic_name) }}" method="get" class="filter-form">
+        <form action="{{ url_for('browse.browse_topics') }}" method="get" class="filter-form">
             <div class="filter-group">
                 <label for="filter_word">Search in articles:</label>
                 <input type="text" id="filter_word" name="filter_word" value="{{ filter_word }}"
@@ -181,9 +208,11 @@
             </div>
             <div class="filter-group">
                 <label for="min_words">Word count range:</label>
-                <input type="number" id="min_words" name="min_words" value="{{ min_words }}" placeholder="Min" min="0">
+                <input type="number" id="min_words" name="min_words" value="{{ min_words }}" placeholder="Min"
+                       min="0">
                 <span>to</span>
-                <input type="number" id="max_words" name="max_words" value="{{ max_words }}" placeholder="Max" min="0">
+                <input type="number" id="max_words" name="max_words" value="{{ max_words }}" placeholder="Max"
+                       min="0">
             </div>
             <div class="filter-group">
                 <label for="canton">Canton:</label>
@@ -196,11 +225,11 @@
             </div>
             <div class="filter-actions">
                 <button type="submit" class="filter-btn">Apply Filters</button>
-                <a href="{{ url_for('topic_results', topic_name=topic_name) }}" class="clear-btn">Clear All</a>
+                <a href="{{ url_for('browse.browse_topics') }}" class="clear-btn">Clear All</a>
             </div>
+
         </form>
     </div>
-
     {% if filter_word or date_from or date_to or min_words or max_words %}
     <div class="active-filters">
         <strong>Active Filters:</strong>
@@ -227,43 +256,62 @@
         {% endif %}
     </div>
     {% endif %}
-
     {% if error %}
     <div class="error-message">
         {{ error }}
     </div>
     {% endif %}
-
-    <div class="result-count">
-        <strong>{{ total_files }}</strong> articles found
-    </div>
-
-    {% if files|length == 0 %}
-    <p>No matching articles found.</p>
+    {% if topics|length == 0 %}
+    <p>No topics found. Start searching to create article collections.</p>
     {% else %}
-    <ul class="file-list">
-        {% for file in files %}
-        <li class="file-item">
-            <div class="file-header">
-                <a href="{{ url_for('view_file', topic=topic_name, filename=file.filename) }}">
-                    {{ file.title }}
+    {% for topic in topics %}
+    <div class="topic-section">
+        <h2 class="topic-title">{{ topic.name }}</h2>
+        {% if topic.files|length == 0 %}
+        <p class="empty-topic">No articles in this topic</p>
+        {% else %}
+        <ul class="file-list">
+            {% for file in topic.files %}
+            <li class="file-item">
+                <div class="file-header">
+                    <a href="{{ url_for('browse.view_file', topic=topic.name, filename=file.filename) }}">
+                        {{ file.title }}
+                    </a>
+                </div>
+                <div class="file-metadata">
+                    {% if file.date != 'Unknown date' %}
+                    <span class="metadata-item">Date: {{ file.date }}</span>
+                    {% endif %}
+                    {% if file.newspaper != 'Unknown source' %}
+                    <span class="metadata-item">Source: {{ file.newspaper }}</span>
+                    {% endif %}
+                    {% if file.canton %}
+                    <span class="metadata-item">Canton: {{ file.canton }}</span>
+                    {% endif %}
+                    <span class="metadata-item">Words: {{ file.word_count }}</span>
+                </div>
+            </li>
+            {% endfor %}
+            {% if topic.has_more %}
+            <div class="show-more">
+                <a href="{{ url_for('browse.topic_results',
+         topic_name=topic.name,
+         filter_word=filter_word,
+         date_from=date_from,
+         date_to=date_to,
+         min_words=min_words,
+         max_words=max_words,
+         canton=canton,
+         newspaper=newspaper) }}"
+                   class="show-more-link">
+                    Show all {{ topic.total_files }} articles
                 </a>
             </div>
-            <div class="file-metadata">
-                {% if file.date != 'Unknown date' %}
-                <span class="metadata-item">Date: {{ file.date }}</span>
-                {% endif %}
-                {% if file.newspaper != 'Unknown source' %}
-                <span class="metadata-item">Source: {{ file.newspaper }}</span>
-                {% endif %}
-                {% if file.canton %}
-                <span class="metadata-item">Canton: {{ file.canton }}</span>
-                {% endif %}
-                <span class="metadata-item">Words: {{ file.word_count }}</span>
-            </div>
-        </li>
-        {% endfor %}
-    </ul>
+            {% endif %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endfor %}
     {% endif %}
 </div>
 </body>

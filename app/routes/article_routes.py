@@ -20,6 +20,7 @@ def correct_file(topic, filename):
     """
     file_path = os.path.join('data', 'by_topic', topic, filename)
 
+    # Vérification de l'existence du fichier
     if not os.path.exists(file_path) or not file_path.endswith('.json'):
         return jsonify({'error': 'Fichier introuvable'}), 404
 

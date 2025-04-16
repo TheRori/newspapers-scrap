@@ -92,7 +92,7 @@ def view_version(version_id):
         show_diff = False
 
         if spell_corrected and original_content and correction_method != 'none':
-            from newspapers_scrap.utils import generate_html_diff
+            from utils import generate_html_diff
             diff_html = generate_html_diff(original_content, content)
             show_diff = True
             logger.info("HTML de différence généré pour la vue de version")

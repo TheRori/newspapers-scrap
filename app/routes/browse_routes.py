@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from flask import render_template, jsonify, abort, request
+from utils.file import find_files, read_json_file
 
 from . import browse_bp
 
@@ -33,91 +34,91 @@ def browse_topics():
     min_words = int(min_words) if min_words and min_words.isdigit() else None
     max_words = int(max_words) if max_words and max_words.isdigit() else None
 
-    if not os.path.exists(topics_dir):
+    if not topics_dir.exists():
         return render_template('browse.html', error=f'Répertoire de sujets {topics_dir} introuvable', topics=[])
 
     topics = []
-    for topic in sorted(os.listdir(topics_dir)):
-        topic_path = os.path.join(topics_dir, topic)
-        if os.path.isdir(topic_path):
+    for topic in sorted(topics_dir.iterdir()):
+        if topic.is_dir():
             topic_info = {
-                'name': topic,
+                'name': topic.name,
                 'files': [],
                 'total_files': 0,
-                'showing_all': topic == show_all_topic
+                'showing_all': topic.name == show_all_topic
             }
 
             matching_files = []
-            for file in sorted(os.listdir(topic_path)):
-                if file.endswith('.json'):
-                    file_path = os.path.join(topic_path, file)
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            file_data = json.load(f)
+            # Utilisation de find_files pour trouver les JSON
+            json_files = find_files(topic, "*.json")
 
-                            # Vérification si le fichier correspond aux critères de filtrage
-                            include_file = True
+            for file_path in sorted(json_files):
+                try:
+                    # Utilisation de read_json_file pour lire les fichiers
+                    file_data = read_json_file(file_path)
 
-                            # Filtre par mot (dans le titre ou le contenu)
-                            if filter_word:
-                                title = file_data.get('title', '').lower()
-                                content = file_data.get('content', '').lower()
-                                if filter_word not in title and filter_word not in content:
-                                    include_file = False
+                    # Vérification si le fichier correspond aux critères de filtrage
+                    include_file = True
 
-                            # Filtre par plage de dates
-                            if include_file and (filter_date_from or filter_date_to):
-                                file_date = file_data.get('date', '')
-                                if filter_date_from and file_date < filter_date_from:
-                                    include_file = False
-                                if filter_date_to and file_date > filter_date_to:
-                                    include_file = False
+                    # Filtre par mot (dans le titre ou le contenu)
+                    if filter_word:
+                        title = file_data.get('title', '').lower()
+                        content = file_data.get('content', '').lower()
+                        if filter_word not in title and filter_word not in content:
+                            include_file = False
 
-                            # Filtre par nombre de mots
-                            if include_file and (min_words is not None or max_words is not None):
-                                word_count = file_data.get('word_count', 0)
-                                if min_words is not None and word_count < min_words:
-                                    include_file = False
-                                if max_words is not None and word_count > max_words:
-                                    include_file = False
+                    # Filtre par plage de dates
+                    if include_file and (filter_date_from or filter_date_to):
+                        file_date = file_data.get('date', '')
+                        if filter_date_from and file_date < filter_date_from:
+                            include_file = False
+                        if filter_date_to and file_date > filter_date_to:
+                            include_file = False
 
-                            # Filtre par canton
-                            if include_file and filter_canton:
-                                article_canton = file_data.get('canton', '')
-                                if not article_canton or filter_canton.lower() != article_canton.lower():
-                                    include_file = False
+                    # Filtre par nombre de mots
+                    if include_file and (min_words is not None or max_words is not None):
+                        word_count = file_data.get('word_count', 0)
+                        if min_words is not None and word_count < min_words:
+                            include_file = False
+                        if max_words is not None and word_count > max_words:
+                            include_file = False
 
-                            # Filtre par journal
-                            if include_file and filter_newspaper:
-                                article_newspaper = file_data.get('newspaper', '').lower()
-                                if not article_newspaper or filter_newspaper not in article_newspaper:
-                                    include_file = False
+                    # Filtre par canton
+                    if include_file and filter_canton:
+                        article_canton = file_data.get('canton', '')
+                        if not article_canton or filter_canton.lower() != article_canton.lower():
+                            include_file = False
 
-                            if include_file:
-                                file_info = {
-                                    'filename': file,
-                                    'title': file_data.get('title', 'Sans titre'),
-                                    'date': file_data.get('date', 'Date inconnue'),
-                                    'word_count': file_data.get('word_count', 0),
-                                    'newspaper': file_data.get('newspaper', 'Source inconnue'),
-                                    'canton': file_data.get('canton', None)
-                                }
-                                matching_files.append(file_info)
-                    except Exception as e:
-                        logger.error(f"Erreur de lecture du fichier {file_path}: {str(e)}")
-                        if not filter_word and not filter_date_from and not filter_date_to and min_words is None and max_words is None:
-                            # Ajouter les fichiers en erreur seulement si aucun filtre n'est actif
-                            matching_files.append({
-                                'filename': file,
-                                'title': 'Erreur de lecture du fichier',
-                                'error': str(e)
-                            })
+                    # Filtre par journal
+                    if include_file and filter_newspaper:
+                        article_newspaper = file_data.get('newspaper', '').lower()
+                        if not article_newspaper or filter_newspaper not in article_newspaper:
+                            include_file = False
+
+                    if include_file:
+                        file_info = {
+                            'filename': file_path.name,
+                            'title': file_data.get('title', 'Sans titre'),
+                            'date': file_data.get('date', 'Date inconnue'),
+                            'word_count': file_data.get('word_count', 0),
+                            'newspaper': file_data.get('newspaper', 'Source inconnue'),
+                            'canton': file_data.get('canton', None)
+                        }
+                        matching_files.append(file_info)
+                except Exception as e:
+                    logger.error(f"Erreur de lecture du fichier {file_path}: {str(e)}")
+                    if not filter_word and not filter_date_from and not filter_date_to and min_words is None and max_words is None:
+                        # Ajouter les fichiers en erreur seulement si aucun filtre n'est actif
+                        matching_files.append({
+                            'filename': file_path.name,
+                            'title': 'Erreur de lecture du fichier',
+                            'error': str(e)
+                        })
 
             # Définir le nombre total de fichiers correspondants
             topic_info['total_files'] = len(matching_files)
 
             # Appliquer la limite sauf si on affiche tout pour ce sujet
-            if topic == show_all_topic or len(matching_files) <= limit_per_topic:
+            if topic.name == show_all_topic or len(matching_files) <= limit_per_topic:
                 topic_info['files'] = matching_files
             else:
                 topic_info['files'] = matching_files[:limit_per_topic]
