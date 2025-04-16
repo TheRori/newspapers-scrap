@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MongoDB Operations - Newspaper Archive</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .card {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .card h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-connected {
+            background-color: #4CAF50;
+        }
+        
+        .status-disconnected {
+            background-color: #F44336;
+        }
+        
+        .progress-container {
+            margin: 20px 0;
+            display: none;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            background-color: #f3f3f3;
+            border-radius: 4px;
+            height: 24px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .progress-bar-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .progress-text {
+            color: white;
+            font-weight: bold;
+            text-shadow: 1px 1px 1px rgba(0,0,0,0.3);
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            line-height: 24px;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            flex: 1;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            margin: 0 5px;
+        }
+        
+        .stat-item h3 {
+            margin: 0;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .stat-item p {
+            margin: 5px 0 0;
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        
+        .alert-success {
+            background-color: #dff0d8;
+            color: #3c763d;
+            border: 1px solid #d6e9c6;
+        }
+        
+        .alert-error {
+            background-color: #f2dede;
+            color: #a94442;
+            border: 1px solid #ebccd1;
+        }
+        
+        .alert-info {
+            background-color: #d9edf7;
+            color: #31708f;
+            border: 1px solid #bce8f1;
+        }
+        
+        .form-check {
+            margin-bottom: 1rem;
+        }
+        
+        .form-check-input {
+            margin-top: 0.3rem;
+        }
+        
+        .form-check-label {
+            margin-bottom: 0;
+        }
+        
+        .status-message {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="/">Home</a>
+        <a href="/browse">Browse Topics</a>
+        <a href="/search">Search</a>
+        <a href="/mongodb" class="active">MongoDB</a>
+    </div>
+    
+    <div class="container">
+        <h1>MongoDB Operations</h1>
+        
+        <div class="card" id="connection-status">
+            <h2>Connection Status</h2>
+            <p>
+                <span class="status-indicator" id="status-indicator"></span>
+                <span id="status-text">Checking connection...</span>
+            </p>
+            <div id="connection-details"></div>
+        </div>
+        
+        <div class="card">
+            <h2>Push Articles to MongoDB</h2>
+            <p>Push all processed articles from the data directory to MongoDB.</p>
+            
+            <div id="alert-container"></div>
+            
+            <div class="progress-container" id="progress-container">
+                <div class="status-message" id="status-message">Initializing...</div>
+                <div class="progress-bar">
+                    <div class="progress-bar-fill" id="progress-bar-fill"></div>
+                    <div class="progress-text" id="progress-text">0%</div>
+                </div>
+                
+                <div class="stats">
+                    <div class="stat-item">
+                        <h3>Processed</h3>
+                        <p id="processed-count">0</p>
+                    </div>
+                    <div class="stat-item">
+                        <h3>Total</h3>
+                        <p id="total-count">0</p>
+                    </div>
+                    <div class="stat-item">
+                        <h3>Inserted</h3>
+                        <p id="inserted-count">0</p>
+                    </div>
+                    <div class="stat-item">
+                        <h3>Skipped</h3>
+                        <p id="skipped-count">0</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="only-new-checkbox">
+                <label class="form-check-label" for="only-new-checkbox">
+                    Only push new articles (skip existing ones)
+                </label>
+            </div>
+            
+            <button id="push-button" onclick="pushToMongoDB()">Push Articles to MongoDB</button>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        // Connect to Socket.IO
+        const socket = io();
+        
+        // DOM elements
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+        const connectionDetails = document.getElementById('connection-details');
+        const pushButton = document.getElementById('push-button');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBarFill = document.getElementById('progress-bar-fill');
+        const progressText = document.getElementById('progress-text');
+        const processedCount = document.getElementById('processed-count');
+        const totalCount = document.getElementById('total-count');
+        const insertedCount = document.getElementById('inserted-count');
+        const skippedCount = document.getElementById('skipped-count');
+        const alertContainer = document.getElementById('alert-container');
+        const onlyNewCheckbox = document.getElementById('only-new-checkbox');
+        const statusMessage = document.getElementById('status-message');
+        
+        // Check MongoDB connection status on page load
+        document.addEventListener('DOMContentLoaded', checkConnectionStatus);
+        
+        // Listen for MongoDB progress updates
+        socket.on('mongodb_progress', function(data) {
+            updateProgressBar(data);
+        });
+        
+        // Function to check MongoDB connection status
+        function checkConnectionStatus() {
+            fetch('/api/mongodb/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.connected) {
+                        statusIndicator.className = 'status-indicator status-connected';
+                        statusText.textContent = 'Connected to MongoDB';
+                        
+                        // Display connection details
+                        connectionDetails.innerHTML = `
+                            <p><strong>Database:</strong> ${data.database}</p>
+                            <p><strong>Collection:</strong> ${data.collection}</p>
+                            <p><strong>Documents:</strong> ${data.document_count}</p>
+                        `;
+                        
+                        // Enable push button
+                        pushButton.disabled = false;
+                    } else {
+                        statusIndicator.className = 'status-indicator status-disconnected';
+                        statusText.textContent = 'Disconnected from MongoDB';
+                        connectionDetails.innerHTML = `<p class="error">${data.error}</p>`;
+                        
+                        // Disable push button
+                        pushButton.disabled = true;
+                    }
+                })
+                .catch(error => {
+                    statusIndicator.className = 'status-indicator status-disconnected';
+                    statusText.textContent = 'Error checking connection';
+                    connectionDetails.innerHTML = `<p class="error">${error.message}</p>`;
+                    
+                    // Disable push button
+                    pushButton.disabled = true;
+                });
+        }
+        
+        // Function to push articles to MongoDB
+        function pushToMongoDB() {
+            // Show progress container
+            progressContainer.style.display = 'block';
+            
+            // Disable push button
+            pushButton.disabled = true;
+            pushButton.textContent = 'Processing...';
+            
+            // Clear any previous alerts
+            alertContainer.innerHTML = '';
+            
+            // Show info alert
+            showAlert('info', 'Starting to push articles to MongoDB. This may take a while...');
+            
+            // Make API request to push articles
+            fetch('/api/mongodb/push', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    onlyNew: onlyNewCheckbox.checked
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert('success', data.message);
+                } else {
+                    showAlert('error', 'Error: ' + data.message);
+                }
+                
+                // Re-enable push button
+                pushButton.disabled = false;
+                pushButton.textContent = 'Push Articles to MongoDB';
+                
+                // Refresh connection status
+                checkConnectionStatus();
+            })
+            .catch(error => {
+                showAlert('error', 'Error: ' + error.message);
+                
+                // Re-enable push button
+                pushButton.disabled = false;
+                pushButton.textContent = 'Push Articles to MongoDB';
+            });
+        }
+        
+        // Function to update progress bar
+        function updateProgressBar(data) {
+            const percentage = data.percentage;
+            
+            // Update progress bar
+            progressBarFill.style.width = percentage + '%';
+            progressText.textContent = percentage + '%';
+            
+            // Update stats
+            processedCount.textContent = data.current;
+            totalCount.textContent = data.total;
+            insertedCount.textContent = data.inserted;
+            skippedCount.textContent = data.skipped;
+            
+            // Update status message
+            statusMessage.textContent = data.status;
+        }
+        
+        // Function to show alerts
+        function showAlert(type, message) {
+            const alertClass = type === 'success' ? 'alert-success' : 
+                              type === 'error' ? 'alert-error' : 'alert-info';
+            
+            alertContainer.innerHTML = `
+                <div class="alert ${alertClass}">
+                    ${message}
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

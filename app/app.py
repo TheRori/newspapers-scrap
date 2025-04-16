@@ -37,6 +37,10 @@ process_tracker.set_app(app)  # Pass the Flask app reference
 app.process_tracker = process_tracker
 app.socketio = socketio
 
+# Register all blueprints
+from routes import register_blueprints
+register_blueprints(app)
+
 # Add Socket.IO event handlers
 @socketio.on('connect')
 def handle_connect():
@@ -117,8 +121,5 @@ def index():
     return render_template('index.html')
 
 if __name__ == '__main__':
-    from routes import register_blueprints
-    register_blueprints(app)
-
     # Start the Flask server with SocketIO
     socketio.run(app, host='127.0.0.1', port=8008, debug=True, use_reloader=False)
