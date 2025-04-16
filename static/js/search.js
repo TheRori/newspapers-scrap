@@ -260,6 +260,7 @@ document.getElementById('searchForm').addEventListener('submit', function (e) {
     searchBtn.disabled = true;
     stopBtn.disabled = false;
     searchBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Searching...';
+    const startFrom = document.getElementById('start_from').value.trim();
 
     // Create the form data object
     const formData = {
@@ -267,8 +268,10 @@ document.getElementById('searchForm').addEventListener('submit', function (e) {
         cantons: document.getElementById('cantons').value, // This will now get the selected canton code
         correction_method: document.getElementById('correction_method').value,
         search_by: document.getElementById('search_by').value,
-        laq: 'fr'
+        laq: 'fr',
+        start_from: parseInt(startFrom)
     };
+
 
     // Only add the searches parameter if it's not "all"
     const searches = document.getElementById('searches').value.trim();

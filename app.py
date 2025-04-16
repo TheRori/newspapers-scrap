@@ -242,6 +242,15 @@ def search():
         base_cmd.extend(['--cantons'] + data['cantons'].split())
     if data.get('searches') and data.get('searches') != 'all':
         base_cmd.extend(['--max_articles', str(data['searches'])])
+    logger.debug(f"start_from: {data.get('start_from')}")
+
+    # Get start_from parameter value (UI value is 1-based, code uses 0-based)
+    start_from = data.get('start_from', '0')
+    try:
+        start_from_value = int(start_from)
+    except ValueError:
+        logger.warning(f"Invalid start_from value: {start_from}, defaulting to 0")
+        start_from_value = 0
 
     # Add correction parameters
     correction_method = data.get('correction_method', 'none')
@@ -259,14 +268,21 @@ def search():
         end_year = int(end_year)
 
         # Create a task for each year
-        for year in range(start_year, end_year + 1):
+        for i, year in enumerate(range(start_year, end_year + 1)):
             year_cmd = base_cmd.copy()
             year_cmd.extend(['--date_range', f"{year}-{year}"])
+
+            # Only add start_from parameter to the first year/task
+            if i == 0 and start_from_value > 0:
+                year_cmd.extend(['--start_from', str(start_from_value - 1)])  # Convert to 0-based
+
             search_tasks.append(year_cmd)
             search_periods.append(f"{year}")
+    else:
+        # For single search or all-time search, include start_from if needed
+        if start_from_value > 0:
+            base_cmd.extend(['--start_from', str(start_from_value - 1)])  # Convert to 0-based
 
-    # If no tasks were created (due to missing parameters), use a default
-    if not search_tasks:
         search_tasks.append(base_cmd)
         search_periods.append("Default")
 
@@ -286,7 +302,7 @@ def search():
     cmd = search_tasks[0]
     current_period = search_periods[0]
 
-    # Start process using the tracker's method - KEEP ONLY THIS ONE
+    # Start process using the tracker's method
     process_tracker.start_process(cmd, current_period)
 
     socketio.start_background_task(emit_output)

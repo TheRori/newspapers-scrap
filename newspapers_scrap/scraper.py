@@ -4,6 +4,7 @@ import re
 import logging_config
 import logging
 
+from newspapers_scrap import performance_tracker
 from newspapers_scrap.performance_tracker import PerformanceTracker
 from newspapers_scrap.report_generator import ScrapingReportGenerator
 from newspapers_scrap.utils import clean_and_parse_date
@@ -47,7 +48,7 @@ class NewspaperScraper:
         self.current_fingerprint = None
         self.apply_spell_correction = apply_spell_correction
         self.correction_method = correction_method
-        self.performance_tracker = PerformanceTracker()
+        self.performance_tracker = performance_tracker or PerformanceTracker()
         self.stop_requested = False
 
     async def _init_playwright(self):
@@ -82,7 +83,7 @@ class NewspaperScraper:
 
         # Track request
         self.performance_tracker.start_request()
-        
+
         # Check robots.txt but don't block
         await self.robots_parser.check_url(url)
         logger.info(f"Checked robots.txt for {url}")
@@ -160,7 +161,7 @@ class NewspaperScraper:
                 # Close the context to free resources
                 await context.close()
                 logger.info("Browser context closed")
-                
+
                 # Stop tracking request with success
                 self.performance_tracker.stop_request(success=True)
                 return soup
@@ -168,10 +169,10 @@ class NewspaperScraper:
             except Exception as e:
                 retry_count += 1
                 logger.error(f"Error fetching {url} with Playwright: {e}")
-                
+
                 # Track retry
                 self.performance_tracker.track_retry()
-                
+
                 wait_time = exponential_backoff(retry_count)
                 if retry_count < max_retries:
                     logger.info(f"Retrying after {wait_time:.2f} seconds...")
@@ -183,7 +184,8 @@ class NewspaperScraper:
                     return None
 
     async def search(self, query: str, page: int = 1, newspapers: List[str] = None,
-                     cantons: List[str] = None, decade: str = None, year: str = None, laq: str = 'fr') -> Dict[str, Any]:
+                     cantons: List[str] = None, decade: str = None, year: str = None, laq: str = 'fr') -> Dict[
+        str, Any]:
         """
         Search for articles and extract results from specified newspapers and cantons
 
@@ -228,7 +230,6 @@ class NewspaperScraper:
         # Add year filter if specified (e.g., '1975')
         if year:
             params['yeq'] = year
-
 
         query_string = '&'.join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items()])
         search_url = f"{self.base_url}/?{query_string}"
@@ -350,7 +351,8 @@ class NewspaperScraper:
     async def save_articles_from_search(self, query: str, output_dir: str = None,
                                         max_articles: int = None, newspapers: List[str] = None,
                                         cantons: List[str] = None, decade: str = None,
-                                        year: str = None, generate_report: bool = True,laq: str = 'fr') -> List[Dict[str, Any]]:
+                                        year: str = None, generate_report: bool = True, laq: str = 'fr',
+                                        start_from: int = 0) -> List[Dict[str, Any]]:
         """
         Search for articles, extract their content, and save using the organizer
 
@@ -364,13 +366,15 @@ class NewspaperScraper:
             year: Specific year to search (e.g., "1975")
             generate_report: Whether to generate a visual performance report
             laq: Language of the query (default is 'fr' for French)
+            start_from: Result number to start from (skip earlier results)
+
 
         Returns:
             List of article metadata
         """
         # Reset stop flag at the beginning of a new search
         self.stop_requested = False
-        
+
         try:
             self.performance_tracker.start_tracking()  # Start tracking
             self.performance_tracker.track_search_query(query)  # Track the search query
@@ -378,7 +382,10 @@ class NewspaperScraper:
             config_max = self.config.scraping.limits.max_results_per_search
 
             # Get first page of results to determine total count
-            page = 1
+            logger.debug(f"start from: {start_from}")
+            starting_page = (start_from // 20) + 1
+            results_to_skip = start_from % 20
+            page = starting_page
 
             # Create a copy of the search parameters
             search_params = {
@@ -417,6 +424,10 @@ class NewspaperScraper:
             # Process articles
             total_collected = 0
 
+            if results_to_skip > 0 and articles:
+                logger.info(f"Skipping first {results_to_skip} results on page {page}")
+                articles = articles[results_to_skip:]
+
             # Fonction pour vérifier le fichier signal d'arrêt
             def check_external_stop_signal():
                 if os.path.exists('stop_signal.txt'):
@@ -424,7 +435,7 @@ class NewspaperScraper:
                     self.stop_requested = True
                     return True
                 return False
-                
+
             while total_collected < max_articles and not self.stop_requested:
                 # Vérifier périodiquement le signal d'arrêt externe
                 if total_collected % 5 == 0:  # Vérifier tous les 5 articles
@@ -432,7 +443,7 @@ class NewspaperScraper:
                 if not articles:
                     # If no more articles on current page, go to next page
                     page += 1
-                    
+
                     # Track delay
                     self.performance_tracker.start_delay()
                     await self.add_delay()
@@ -451,15 +462,15 @@ class NewspaperScraper:
                 article = articles.pop(0)
 
                 logger.info(f"Processing article {total_collected + 1}/{max_articles}: {article['title']}")
-                
+
                 # Track article processing time
                 self.performance_tracker.start_article_processing()
-                
+
                 # Track delay
                 self.performance_tracker.start_delay()
                 await self.add_delay()
                 self.performance_tracker.stop_delay()
-                
+
                 # Track request
                 self.performance_tracker.start_request()
                 article_content = await self.scrape_article_content(article['url'])
@@ -488,7 +499,7 @@ class NewspaperScraper:
                     newspaper=article.get('newspaper', 'Unknown'),
                     canton=cantons[0] if cantons else None
                 )
-                
+
                 # Stop tracking this article's processing time
                 self.performance_tracker.stop_article_processing()
 
@@ -498,7 +509,7 @@ class NewspaperScraper:
                 # Check if we've reached the maximum
                 if total_collected >= max_articles:
                     break
-                
+
                 # Check if stop was requested
                 if self.stop_requested:
                     logger.info("Scraping stopped by user request")
@@ -506,15 +517,15 @@ class NewspaperScraper:
 
             if self.stop_requested:
                 logger.info(f"Scraping stopped after processing {total_collected} articles")
-                
+
             return all_results
         finally:
             self.performance_tracker.stop_tracking()  # Stop tracking
             summary = self.performance_tracker.generate_summary()  # Generate summary
             logger.info(f"Scraping summary: {summary}")
-            
+
             # Generate visual report if requested
-            if generate_report:
+            if generate_report and year is None and decade is None:
                 try:
                     report_generator = ScrapingReportGenerator()
                     report_path = report_generator.generate_report(summary, query)
@@ -522,7 +533,7 @@ class NewspaperScraper:
                     logger.info(f"Open {report_path}/report.html to view the complete report")
                 except Exception as e:
                     logger.error(f"Failed to generate performance report: {e}")
-            
+
             # Always ensure browser and playwright are closed
             await self._close_playwright()
 
@@ -545,7 +556,7 @@ class NewspaperScraper:
         """Synchronous wrapper for the async save_articles_from_search method"""
         return asyncio.run(self.save_articles_from_search(query, output_dir, max_articles,
                                                           newspapers, cantons))
-                                                          
+
     def request_stop(self):
         """Request the scraper to stop at the next convenient point"""
         logger.info("Stop requested for scraper")

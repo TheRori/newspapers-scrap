@@ -54,6 +54,7 @@ def check_stop_signal():
 
 
 async def async_main():
+    """Main async function that runs the search"""
     global current_scraper
     total_years = 0
     completed_years = 0
@@ -75,9 +76,22 @@ async def async_main():
     parser.add_argument('--no-correction', action='store_true',
                         help='Disable spell correction')
     parser.add_argument('--all_time', action='store_true', help='Search all time')
+    parser.add_argument('--start_from', type=int, default=0,
+                        help='Result number to start from (skip earlier results)')
 
     args = parser.parse_args()
     logger.debug('Searching for newspaper articles')
+
+    # Create a single performance tracker for the entire search period
+    from newspapers_scrap.performance_tracker import PerformanceTracker
+    from newspapers_scrap.report_generator import ScrapingReportGenerator
+
+    global_tracker = PerformanceTracker()
+    global_tracker.start_tracking()
+    global_tracker.track_search_query(args.query)
+
+    search_query = args.query
+    output_dir = args.output
 
     # After parsing arguments, calculate total years in search
     if args.all_time:
@@ -110,7 +124,7 @@ async def async_main():
 
     # Track timing
     start_time = time.time()
-    results = []
+    all_results = []
 
     try:
         if args.all_time:
@@ -122,14 +136,20 @@ async def async_main():
                     correction_method=args.correction,
                 )
 
+                # Use the global tracker
+                current_scraper.performance_tracker = global_tracker
+
                 results = await current_scraper.save_articles_from_search(
                     query=args.query,
                     output_dir=args.output,
                     max_articles=args.max_articles,
                     newspapers=args.newspapers,
                     cantons=args.cantons,
-                    laq = args.laq
+                    laq=args.laq,
+                    start_from=args.start_from
                 )
+                if results:
+                    all_results.append(results)
             except Exception as e:
                 logger.error(f"Error in search: {e}")
             finally:
@@ -167,6 +187,9 @@ async def async_main():
                                     correction_method=args.correction,
                                 )
 
+                                # Use the global tracker
+                                current_scraper.performance_tracker = global_tracker
+
                                 # Vérifier le signal d'arrêt avant de commencer
                                 if check_stop_signal():
                                     logger.info("Stopping search due to stop signal")
@@ -180,11 +203,12 @@ async def async_main():
                                     newspapers=args.newspapers,
                                     cantons=args.cantons,
                                     decade=decade,
-                                    laq = args.laq
+                                    laq=args.laq,
+                                    start_from=args.start_from
                                 )
 
                                 if decade_results:
-                                    results.extend(decade_results)
+                                    all_results.append(decade_results)
                             except Exception as e:
                                 logger.error(f"Error searching decade {decade}0s: {e}")
                             finally:
@@ -207,6 +231,9 @@ async def async_main():
                                     correction_method=args.correction,
                                 )
 
+                                # Use the global tracker
+                                current_scraper.performance_tracker = global_tracker
+
                                 # Vérifier le signal d'arrêt avant de commencer
                                 if check_stop_signal():
                                     logger.info("Stopping search due to stop signal")
@@ -220,11 +247,12 @@ async def async_main():
                                     newspapers=args.newspapers,
                                     cantons=args.cantons,
                                     year=str(year),
-                                    laq = args.laq
+                                    laq=args.laq,
+                                    start_from=args.start_from
                                 )
 
                                 if year_results:
-                                    results.extend(year_results)
+                                    all_results.append(year_results)
                             except Exception as e:
                                 logger.error(f"Error searching year {year}: {e}")
                             finally:
@@ -245,6 +273,9 @@ async def async_main():
                         correction_method=args.correction,
                     )
 
+                    # Use the global tracker
+                    current_scraper.performance_tracker = global_tracker
+
                     # Vérifier le signal d'arrêt avant de commencer
                     if check_stop_signal():
                         logger.info("Stopping search due to stop signal")
@@ -256,8 +287,11 @@ async def async_main():
                         max_articles=args.max_articles,
                         newspapers=args.newspapers,
                         cantons=args.cantons,
-                        laq = args.laq
+                        laq=args.laq,
+                        start_from=args.start_from
                     )
+                    if results:
+                        all_results.append(results)
                 except Exception as e:
                     logger.error(f"Error in search: {e}")
                 finally:
@@ -270,10 +304,30 @@ async def async_main():
 
     except Exception as e:
         logger.error(f"Unhandled exception during search: {e}")
+    finally:
+        # Stop tracking and generate a comprehensive report
+        global_tracker.stop_tracking()
+        summary = global_tracker.generate_summary()
+
+        # Generate the report with aggregated data from all years
+        report_generator = ScrapingReportGenerator(output_dir=f"{output_dir}/reports" if output_dir else "reports")
+        try:
+            report_path = report_generator.generate_report(summary, query=search_query)
+            logger.info(f"Generated comprehensive report for entire search period at: {report_path}")
+        except Exception as e:
+            logger.error(f"Failed to generate report: {e}")
 
     # Print summary
     duration = time.time() - start_time
-    logger.info(f"Processing complete. {len(results) if results else 0} articles processed in {duration:.2f} seconds")
+    total_articles = 0
+    if all_results:
+        for result in all_results:
+            if isinstance(result, dict) and 'count' in result:
+                total_articles += result['count']
+            elif isinstance(result, list):
+                # If result is a list, count its length
+                total_articles += len(result)
+    logger.info(f"Processing complete. {total_articles} articles processed in {duration:.2f} seconds")
 
 
 def main():

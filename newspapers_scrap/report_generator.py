@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 import matplotlib
+
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -12,9 +13,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
 class ScrapingReportGenerator:
     """Generate visual reports from scraping performance data"""
-    
+
     def __init__(self, output_dir: Optional[str] = None):
         """
         Initialize the report generator
@@ -26,30 +28,30 @@ class ScrapingReportGenerator:
             self.output_dir = Path(output_dir)
         else:
             self.output_dir = Path("reports/figures")
-        
+
         # Create directory if it doesn't exist
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Set default style
         sns.set_theme(style="whitegrid")
-        
+
         logger.info(f"Report generator initialized with output directory: {self.output_dir}")
-    
+
     def generate_report(self, performance_data: Dict[str, Any], query: str = None) -> str:
         """
         Generate a comprehensive visual report from performance data
-        
+
         Args:
             performance_data: Performance data dictionary from PerformanceTracker
             query: The search query used (optional)
-            
+
         Returns:
             Path to the generated report directory
         """
         try:
             # Create a directory for this report based on query
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
+
             # Use query for report name if available, otherwise use timestamp
             if query:
                 # Clean query for filename
@@ -57,39 +59,51 @@ class ScrapingReportGenerator:
                 report_name = f"scraping_report_{clean_query}"
             else:
                 report_name = f"scraping_report_{timestamp}"
-            
+
             # Check if directory already exists, if so, use it instead of creating a new one
             report_dir = self.output_dir / report_name
-            
-            # If directory exists, we'll update the existing report
+
+            # If directory exists, we'll try to merge existing data with new data
             if report_dir.exists():
+                try:
+                    existing_data_path = report_dir / "performance_data.json"
+                    if existing_data_path.exists():
+                        with open(existing_data_path, "r", encoding="utf-8") as f:
+                            existing_data = json.load(f)
+
+                        # Merge the data
+                        performance_data = self._merge_performance_data(existing_data, performance_data)
+                        logger.info(f"Merged new data with existing data in {report_dir}")
+                except Exception as e:
+                    logger.error(f"Error merging with existing data: {e}")
+
                 logger.info(f"Updating existing report in {report_dir}")
             else:
                 report_dir.mkdir(exist_ok=True)
                 logger.info(f"Creating new report in {report_dir}")
-            
+
             logger.info(f"Generating report in {report_dir}")
-            
+
             # Save raw data as JSON
             try:
                 with open(report_dir / "performance_data.json", "w", encoding="utf-8") as f:
                     json.dump(performance_data, f, indent=2, ensure_ascii=False)
             except Exception as e:
                 logger.error(f"Error saving performance data as JSON: {e}")
-            
+
             # Validate performance data structure
             self._validate_performance_data(performance_data)
-            
+
             # Generate individual charts
             self._generate_time_distribution_chart(performance_data, report_dir)
             self._generate_articles_by_year_chart(performance_data, report_dir)
             self._generate_articles_by_newspaper_chart(performance_data, report_dir)
             self._generate_articles_by_canton_chart(performance_data, report_dir)
             self._generate_performance_metrics_chart(performance_data, report_dir)
-            
+
             # Generate summary HTML
             self._generate_html_report(performance_data, report_dir, query)
-            
+
             logger.info(f"Report generation complete: {report_dir}")
             return str(report_dir)
         except Exception as e:
@@ -98,13 +112,13 @@ class ScrapingReportGenerator:
             try:
                 error_report_dir = self.output_dir / f"error_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 error_report_dir.mkdir(exist_ok=True)
-                
+
                 with open(error_report_dir / "error.txt", "w", encoding="utf-8") as f:
                     f.write(f"Error generating report: {str(e)}\n\n")
                     f.write(f"Query: {query}\n\n")
                     f.write("Performance data structure:\n")
                     f.write(str(performance_data))
-                
+
                 # Create a simple HTML error page
                 with open(error_report_dir / "report.html", "w", encoding="utf-8") as f:
                     f.write(f"""
@@ -128,12 +142,12 @@ class ScrapingReportGenerator:
                     </body>
                     </html>
                     """)
-                
+
                 return str(error_report_dir)
             except Exception as inner_e:
                 logger.error(f"Failed to create error report: {inner_e}")
                 return "Error generating report"
-    
+
     def _generate_time_distribution_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing time distribution between different activities"""
         try:
@@ -141,94 +155,117 @@ class ScrapingReportGenerator:
             request_time = max(0, data['request_stats']['total_time'])
             delay_time = max(0, data['delay_stats']['total_time'])
             processing_time = max(0, data['processing_stats']['total_time'])
-            
+
             # Ensure other_time is not negative
             total_time = data['total_time']
             tracked_time = request_time + delay_time + processing_time
             other_time = max(0, total_time - tracked_time)
-            
+
             # Create data for pie chart
             labels = ['Requêtes', 'Délais', 'Traitement', 'Autre']
             sizes = [request_time, delay_time, processing_time, other_time]
-            
+
             # Ensure we have at least some data to show
             if sum(sizes) <= 0:
                 logger.warning("No time data available for pie chart, using placeholder values")
                 sizes = [1, 1, 1, 1]  # Placeholder equal values
-            
+
             # Create pie chart with a new figure to avoid thread issues
             fig, ax = plt.subplots(figsize=(10, 7))
-            ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, 
+            ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90,
                    colors=sns.color_palette("viridis", 4))
             ax.axis('equal')
             ax.set_title('Distribution du temps total de scraping')
-            
+
             # Save figure and explicitly close it
             fig.savefig(report_dir / "time_distribution.png", dpi=300, bbox_inches='tight')
             plt.close(fig)
-            
+
             logger.info("Generated time distribution chart")
         except Exception as e:
             logger.error(f"Error generating time distribution chart: {e}")
             # Create a fallback image in case of error
             try:
                 fig, ax = plt.subplots(figsize=(10, 7))
-                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
+                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique',
                         horizontalalignment='center', verticalalignment='center',
                         fontsize=14, color='red')
                 fig.savefig(report_dir / "time_distribution.png", dpi=300, bbox_inches='tight')
                 plt.close(fig)
             except Exception as inner_e:
                 logger.error(f"Failed to create fallback chart: {inner_e}")
-    
+
     def _generate_articles_by_year_chart(self, data: Dict[str, Any], report_dir: Path):
-        """Generate chart showing articles by year"""
+        """Generate chart showing articles by year across the entire search period"""
         try:
             articles_by_year = data['articles_per_year']
             if not articles_by_year:
                 logger.warning("No article year data available for chart")
                 # Create a placeholder chart
                 fig, ax = plt.subplots(figsize=(12, 6))
-                ax.text(0.5, 0.5, 'Aucune donnée disponible par année', 
-                         horizontalalignment='center', verticalalignment='center',
-                         fontsize=14)
+                ax.text(0.5, 0.5, 'Aucune donnée disponible par année',
+                        horizontalalignment='center', verticalalignment='center',
+                        fontsize=14)
                 fig.tight_layout()
                 fig.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
                 plt.close(fig)
                 return
-                
+
             # Convert to DataFrame for easier plotting
             df = pd.DataFrame(list(articles_by_year.items()), columns=['Année', 'Nombre d\'articles'])
+
+            # Convert year strings to integers and ensure they're treated as numbers
+            # This is critical for proper sorting and display
+            df['Année'] = pd.to_numeric(df['Année'], errors='coerce')
+            df = df.dropna(subset=['Année'])  # Drop any rows where year couldn't be converted
+            df['Année'] = df['Année'].astype(int)
             df = df.sort_values('Année')
-            
-            fig, ax = plt.subplots(figsize=(12, 6))
-            sns.barplot(x='Année', y='Nombre d\'articles', data=df, ax=ax)
-            ax.set_title('Articles par année')
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
-            
+
+            # Fill missing years with zeros to show the full period
+            if len(df) > 1:
+                min_year = df['Année'].min()
+                max_year = df['Année'].max()
+                all_years = pd.DataFrame({'Année': range(int(min_year), int(max_year) + 1)})
+                df = pd.merge(all_years, df, on='Année', how='left').fillna(0)
+                df['Nombre d\'articles'] = df['Nombre d\'articles'].astype(int)
+
+            # Create figure with sufficient width based on number of years
+            width = max(12, len(df) * 0.8)  # Adjust width based on number of years
+            fig, ax = plt.subplots(figsize=(width, 6))
+
+            # Use standard barplot for better control
+            bars = ax.bar(df['Année'].astype(str), df['Nombre d\'articles'], color=sns.color_palette("viridis")[0])
+            ax.set_title('Articles par année (période complète)')
+
+            # Ensure x-axis shows all years properly spaced
+            ax.set_xticks(range(len(df)))
+            ax.set_xticklabels(df['Année'].astype(int), rotation=45)
+
             # Add value labels on top of bars
-            for i, v in enumerate(df['Nombre d\'articles']):
-                ax.text(i, v + 0.1, str(v), ha='center')
-            
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width() / 2., height + 0.1,
+                        f'{int(height)}', ha='center', va='bottom')
+
             fig.tight_layout()
             fig.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
             plt.close(fig)
-            
-            logger.info("Generated articles by year chart")
+
+            logger.info("Generated articles by year chart for the entire search period")
         except Exception as e:
             logger.error(f"Error generating articles by year chart: {e}")
             # Create a fallback chart
             try:
                 fig, ax = plt.subplots(figsize=(12, 6))
-                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
-                         horizontalalignment='center', verticalalignment='center',
-                         fontsize=14, color='red')
+                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique',
+                        horizontalalignment='center', verticalalignment='center',
+                        fontsize=14, color='red')
                 fig.tight_layout()
                 fig.savefig(report_dir / "articles_by_year.png", dpi=300, bbox_inches='tight')
                 plt.close(fig)
             except Exception as inner_e:
                 logger.error(f"Failed to create fallback chart: {inner_e}")
-    
+
     def _generate_articles_by_newspaper_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing articles by newspaper"""
         try:
@@ -237,55 +274,55 @@ class ScrapingReportGenerator:
                 logger.warning("No newspaper data available for chart")
                 # Create a placeholder chart
                 fig, ax = plt.subplots(figsize=(12, 6))
-                ax.text(0.5, 0.5, 'Aucune donnée disponible par journal', 
-                         horizontalalignment='center', verticalalignment='center',
-                         fontsize=14)
+                ax.text(0.5, 0.5, 'Aucune donnée disponible par journal',
+                        horizontalalignment='center', verticalalignment='center',
+                        fontsize=14)
                 fig.tight_layout()
                 fig.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
                 plt.close(fig)
                 return
-                
+
             # Convert to DataFrame and sort by count
-            df = pd.DataFrame(list(articles_by_newspaper.items()), 
-                             columns=['Journal', 'Nombre d\'articles'])
+            df = pd.DataFrame(list(articles_by_newspaper.items()),
+                              columns=['Journal', 'Nombre d\'articles'])
             df = df.sort_values('Nombre d\'articles', ascending=False)
-            
+
             # Limit to top 10 if there are many newspapers
             if len(df) > 10:
                 df = df.head(10)
                 title = 'Top 10 des journaux par nombre d\'articles'
             else:
                 title = 'Articles par journal'
-            
+
             fig, ax = plt.subplots(figsize=(12, 6))
             sns.barplot(x='Nombre d\'articles', y='Journal', data=df, ax=ax)
             ax.set_title(title)
-            
+
             # Add value labels
             for i, v in enumerate(df['Nombre d\'articles']):
                 # Ensure we don't place text too far if value is very small
                 offset = max(0.1, v * 0.05) if v > 0 else 0.1
                 ax.text(v + offset, i, str(v), va='center')
-            
+
             fig.tight_layout()
             fig.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
             plt.close(fig)
-            
+
             logger.info("Generated articles by newspaper chart")
         except Exception as e:
             logger.error(f"Error generating articles by newspaper chart: {e}")
             # Create a fallback chart
             try:
                 fig, ax = plt.subplots(figsize=(12, 6))
-                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
-                         horizontalalignment='center', verticalalignment='center',
-                         fontsize=14, color='red')
+                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique',
+                        horizontalalignment='center', verticalalignment='center',
+                        fontsize=14, color='red')
                 fig.tight_layout()
                 fig.savefig(report_dir / "articles_by_newspaper.png", dpi=300, bbox_inches='tight')
                 plt.close(fig)
             except Exception as inner_e:
                 logger.error(f"Failed to create fallback chart: {inner_e}")
-    
+
     def _generate_articles_by_canton_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing articles by canton"""
         try:
@@ -294,48 +331,48 @@ class ScrapingReportGenerator:
                 logger.warning("No canton data available for chart")
                 # Create a placeholder chart
                 fig, ax = plt.subplots(figsize=(12, 6))
-                ax.text(0.5, 0.5, 'Aucune donnée disponible par canton', 
-                         horizontalalignment='center', verticalalignment='center',
-                         fontsize=14)
+                ax.text(0.5, 0.5, 'Aucune donnée disponible par canton',
+                        horizontalalignment='center', verticalalignment='center',
+                        fontsize=14)
                 fig.tight_layout()
                 fig.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
                 plt.close(fig)
                 return
-                
+
             # Convert to DataFrame and sort by count
-            df = pd.DataFrame(list(articles_by_canton.items()), 
-                             columns=['Canton', 'Nombre d\'articles'])
+            df = pd.DataFrame(list(articles_by_canton.items()),
+                              columns=['Canton', 'Nombre d\'articles'])
             df = df.sort_values('Nombre d\'articles', ascending=False)
-            
+
             fig, ax = plt.subplots(figsize=(12, 6))
             sns.barplot(x='Nombre d\'articles', y='Canton', data=df, ax=ax)
             ax.set_title('Articles par canton')
-            
+
             # Add value labels
             for i, v in enumerate(df['Nombre d\'articles']):
                 # Ensure we don't place text too far if value is very small
                 offset = max(0.1, v * 0.05) if v > 0 else 0.1
                 ax.text(v + offset, i, str(v), va='center')
-            
+
             fig.tight_layout()
             fig.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
             plt.close(fig)
-            
+
             logger.info("Generated articles by canton chart")
         except Exception as e:
             logger.error(f"Error generating articles by canton chart: {e}")
             # Create a fallback chart
             try:
                 fig, ax = plt.subplots(figsize=(12, 6))
-                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
-                         horizontalalignment='center', verticalalignment='center',
-                         fontsize=14, color='red')
+                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique',
+                        horizontalalignment='center', verticalalignment='center',
+                        fontsize=14, color='red')
                 fig.tight_layout()
                 fig.savefig(report_dir / "articles_by_canton.png", dpi=300, bbox_inches='tight')
                 plt.close(fig)
             except Exception as inner_e:
                 logger.error(f"Failed to create fallback chart: {inner_e}")
-    
+
     def _generate_performance_metrics_chart(self, data: Dict[str, Any], report_dir: Path):
         """Generate chart showing performance metrics"""
         try:
@@ -347,49 +384,49 @@ class ScrapingReportGenerator:
                 'Temps moyen de traitement (s)': max(0, data['processing_stats']['average_time']),
                 'Temps moyen de délai (s)': max(0, data['delay_stats']['average_time'])
             }
-            
+
             # Create DataFrame
             df = pd.DataFrame(list(metrics.items()), columns=['Métrique', 'Valeur'])
-            
+
             # Create horizontal bar chart with explicit figure and axes
             fig, ax = plt.subplots(figsize=(12, 6))
             sns.barplot(x='Valeur', y='Métrique', data=df, ax=ax)
             ax.set_title('Métriques de performance')
-            
+
             # Add value labels
             for i, v in enumerate(df['Valeur']):
                 # Ensure we don't place text too far if value is very small
                 offset = max(0.1, v * 0.05) if v > 0 else 0.1
                 ax.text(v + offset, i, f"{v:.2f}", va='center')
-            
+
             fig.tight_layout()
             fig.savefig(report_dir / "performance_metrics.png", dpi=300, bbox_inches='tight')
             plt.close(fig)
-            
+
             logger.info("Generated performance metrics chart")
         except Exception as e:
             logger.error(f"Error generating performance metrics chart: {e}")
             # Create a fallback chart
             try:
                 fig, ax = plt.subplots(figsize=(12, 6))
-                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique', 
-                         horizontalalignment='center', verticalalignment='center',
-                         fontsize=14, color='red')
+                ax.text(0.5, 0.5, 'Erreur lors de la génération du graphique',
+                        horizontalalignment='center', verticalalignment='center',
+                        fontsize=14, color='red')
                 fig.tight_layout()
                 fig.savefig(report_dir / "performance_metrics.png", dpi=300, bbox_inches='tight')
                 plt.close(fig)
             except Exception as inner_e:
                 logger.error(f"Failed to create fallback chart: {inner_e}")
-    
+
     def _validate_performance_data(self, data: Dict[str, Any]) -> None:
         """Validate and fix performance data structure to avoid errors"""
         # Ensure all required keys exist
-        required_keys = ['total_time', 'total_articles', 'articles_per_year', 
-                         'articles_per_newspaper', 'articles_per_canton', 
+        required_keys = ['total_time', 'total_articles', 'articles_per_year',
+                         'articles_per_newspaper', 'articles_per_canton',
                          'search_terms', 'error_count', 'retry_count',
                          'request_stats', 'delay_stats', 'processing_stats',
                          'performance_metrics']
-        
+
         for key in required_keys:
             if key not in data:
                 logger.warning(f"Missing key in performance data: {key}")
@@ -399,24 +436,24 @@ class ScrapingReportGenerator:
                     data[key] = {}
                 else:
                     data[key] = 0
-        
+
         # Ensure stats dictionaries have required fields
         for stats_key in ['request_stats', 'delay_stats', 'processing_stats']:
             if not isinstance(data[stats_key], dict):
                 data[stats_key] = {}
-            
+
             for field in ['count', 'total_time', 'average_time', 'min_time', 'max_time']:
                 if field not in data[stats_key]:
                     data[stats_key][field] = 0
-        
+
         # Ensure performance metrics have required fields
         if not isinstance(data['performance_metrics'], dict):
             data['performance_metrics'] = {}
-        
+
         for field in ['articles_per_minute', 'success_rate']:
             if field not in data['performance_metrics']:
                 data['performance_metrics'][field] = 0
-        
+
         logger.info("Performance data validated and fixed if needed")
 
     def _generate_html_report(self, data: Dict[str, Any], report_dir: Path, query: Optional[str] = None):
@@ -424,13 +461,13 @@ class ScrapingReportGenerator:
         try:
             # Format timestamp
             timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            
+
             # Calculate human-readable total time
             total_seconds = data['total_time']
             hours, remainder = divmod(total_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
             time_str = f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
-            
+
             # Create HTML content
             html_content = f"""
             <!DOCTYPE html>
@@ -557,7 +594,7 @@ class ScrapingReportGenerator:
                     <img src="articles_by_newspaper.png" alt="Articles par journal">
                 </div>
             """
-            
+
             # Add canton chart if available
             if data['articles_per_canton']:
                 html_content += """
@@ -566,7 +603,7 @@ class ScrapingReportGenerator:
                     <img src="articles_by_canton.png" alt="Articles par canton">
                 </div>
                 """
-            
+
             # Add performance metrics
             html_content += """
                 <h2>Métriques de performance</h2>
@@ -581,7 +618,7 @@ class ScrapingReportGenerator:
                         <th>Valeur</th>
                     </tr>
             """
-            
+
             # Add request stats
             html_content += f"""
                     <tr>
@@ -605,7 +642,7 @@ class ScrapingReportGenerator:
                         <td>{data['retry_count']}</td>
                     </tr>
             """
-            
+
             # Add search terms if available
             if data['search_terms']:
                 html_content += """
@@ -619,7 +656,7 @@ class ScrapingReportGenerator:
                         </td>
                     </tr>
                 """
-            
+
             # Close table and HTML
             html_content += """
                 </table>
@@ -630,11 +667,105 @@ class ScrapingReportGenerator:
             </body>
             </html>
             """
-            
+
             # Write HTML to file
             with open(report_dir / "report.html", "w", encoding="utf-8") as f:
                 f.write(html_content)
-            
+
             logger.info(f"Generated HTML report at {report_dir / 'report.html'}")
         except Exception as e:
             logger.error(f"Error generating HTML report: {e}")
+
+    def _merge_performance_data(self, existing_data: Dict[str, Any], new_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Merge existing performance data with new data to accumulate across years
+
+        Args:
+            existing_data: Existing performance data
+            new_data: New performance data to merge
+
+        Returns:
+            Merged performance data
+        """
+        result = existing_data.copy()
+
+        # Add simple numeric values
+        result['total_articles'] = existing_data.get('total_articles', 0) + new_data.get('total_articles', 0)
+        result['total_time'] = existing_data.get('total_time', 0) + new_data.get('total_time', 0)
+        result['error_count'] = existing_data.get('error_count', 0) + new_data.get('error_count', 0)
+        result['retry_count'] = existing_data.get('retry_count', 0) + new_data.get('retry_count', 0)
+
+        # Merge dictionaries
+        # Articles per year
+        for year, count in new_data.get('articles_per_year', {}).items():
+            if year in result['articles_per_year']:
+                result['articles_per_year'][year] += count
+            else:
+                result['articles_per_year'][year] = count
+
+        # Articles per newspaper
+        for newspaper, count in new_data.get('articles_per_newspaper', {}).items():
+            if newspaper in result['articles_per_newspaper']:
+                result['articles_per_newspaper'][newspaper] += count
+            else:
+                result['articles_per_newspaper'][newspaper] = count
+
+        # Articles per canton
+        for canton, count in new_data.get('articles_per_canton', {}).items():
+            if canton in result['articles_per_canton']:
+                result['articles_per_canton'][canton] += count
+            else:
+                result['articles_per_canton'][canton] = count
+
+        # Merge search terms
+        result['search_terms'] = list(set(
+            existing_data.get('search_terms', []) + new_data.get('search_terms', [])
+        ))
+
+        # Merge statistics with weighted averages
+        for stat_key in ['request_stats', 'delay_stats', 'processing_stats']:
+            if stat_key not in result:
+                result[stat_key] = new_data.get(stat_key, {}).copy()
+                continue
+
+            e_count = existing_data.get(stat_key, {}).get('count', 0)
+            n_count = new_data.get(stat_key, {}).get('count', 0)
+            total_count = e_count + n_count
+
+            if total_count > 0:
+                result[stat_key]['count'] = total_count
+                result[stat_key]['total_time'] = existing_data.get(stat_key, {}).get('total_time', 0) + new_data.get(
+                    stat_key, {}).get('total_time', 0)
+
+                # Calculate weighted average
+                if total_count > 0:
+                    result[stat_key]['average_time'] = result[stat_key]['total_time'] / total_count
+
+                # Take min/max across both datasets
+                e_min = existing_data.get(stat_key, {}).get('min_time', float('inf'))
+                n_min = new_data.get(stat_key, {}).get('min_time', float('inf'))
+                result[stat_key]['min_time'] = min(e_min, n_min) if e_min != float('inf') or n_min != float(
+                    'inf') else 0
+
+                e_max = existing_data.get(stat_key, {}).get('max_time', 0)
+                n_max = new_data.get(stat_key, {}).get('max_time', 0)
+                result[stat_key]['max_time'] = max(e_max, n_max)
+
+        # Recalculate performance metrics
+        total_time_minutes = result['total_time'] / 60
+        if total_time_minutes > 0:
+            result['performance_metrics'] = {
+                'articles_per_minute': result['total_articles'] / total_time_minutes
+            }
+        else:
+            result['performance_metrics'] = {'articles_per_minute': 0}
+
+        # Calculate success rate
+        total_requests = result['request_stats'].get('count', 0)
+        if total_requests > 0:
+            success = total_requests - result['error_count']
+            result['performance_metrics']['success_rate'] = (success / total_requests) * 100
+        else:
+            result['performance_metrics']['success_rate'] = 0
+
+        return result
