@@ -1,11 +1,47 @@
 
 ---
 
-## MongoDB Integration
+# Newspaper Article Extraction & Management App
 
-This application supports storing processed articles in a MongoDB Atlas database for scalable storage and querying.
+This application is designed to extract, process, and manage articles from newspaper sources. It provides a robust workflow for scraping articles, cleaning and structuring their content, and managing the resulting dataset through a user-friendly web interface. Optionally, the app supports scalable storage and querying of processed articles via MongoDB Atlas.
 
-### MongoDB Setup
+## Features
+- **Article Extraction:** Scrape articles from supported newspaper sources (local files, online archives, etc.).
+- **Content Processing:** Clean, structure, and enrich extracted articles for downstream use.
+- **Web Interface:** Manage extraction, monitor progress, and review articles in real time.
+- **MongoDB Integration (Optional):** Store processed articles in MongoDB for scalable querying and analytics.
+- **Real-Time Progress:** Live progress bar and status updates via Socket.IO during extraction and database operations.
+
+## Article Extraction Workflow
+
+1. **Configure Sources:** Set up your list of newspaper sources (URLs, file paths, etc.) in the configuration files or via the web interface.
+2. **Run Extraction:** Use the web interface or command-line tools to start the extraction process. The app will:
+    - Fetch articles from configured sources
+    - Parse and clean article content
+    - Structure metadata (title, date, author, etc.)
+3. **Review Results:** Extracted articles are available for review and further processing in the web interface.
+4. **(Optional) Push to MongoDB:** Store your processed articles in a MongoDB Atlas database for persistent storage and advanced querying.
+
+## Running the Web App
+
+```bash
+python -m flask --app app run
+```
+
+By default, the app runs on [http://127.0.0.1:5000](http://127.0.0.1:5000).
+
+### Using the Web Interface
+1. Open the web app in your browser.
+2. Navigate to the article management section.
+3. Start extraction jobs, monitor progress, and review extracted articles.
+4. Use the UI to push articles to MongoDB if desired:
+    - Choose to push all or only new articles
+    - Watch real-time progress and status updates
+
+## MongoDB Integration (Optional)
+
+If you want to store processed articles in MongoDB Atlas:
+
 1. Create a MongoDB Atlas cluster (or use your own MongoDB server).
 2. Obtain your MongoDB connection URI.
 3. Configure your credentials in `newspapers_scrap/config/secrets.yaml`:
@@ -21,33 +57,7 @@ mongodb:
 - `database`: The database name (default: `articles`)
 - `collection`: The collection name (default: `press_processed`)
 
-## Real-Time Progress & Web Interface
-
-The app features a Flask web interface with real-time progress updates via Socket.IO. This allows you to:
-- Push articles to MongoDB
-- Track progress with a live progress bar and status messages
-- See which articles are new or already present
-
-### Running the Web App
-
-```bash
-python -m flask --app app run
-```
-
-Or use your preferred method to start the Flask server. By default, the app runs on [http://127.0.0.1:5000](http://127.0.0.1:5000).
-
-### Using the Web Interface
-1. Open the web app in your browser.
-2. Navigate to the article management section.
-3. Use the UI to push articles to MongoDB:
-    - Choose to push all or only new articles
-    - Watch real-time progress and status updates
-
-## Usage: Pushing Articles to MongoDB
-
-- The push feature is available via the web UI under the article blueprint.
-- Progress is tracked and displayed in real time.
-- Only new articles are pushed if you select the 'push only new' option (optimized by pre-fetching existing IDs).
+The push feature is available via the web UI under the article blueprint. Progress is tracked and displayed in real time. Only new articles are pushed if you select the 'push only new' option (optimized by pre-fetching existing IDs).
 
 ## Troubleshooting
 
