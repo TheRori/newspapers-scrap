@@ -1,0 +1,19 @@
+# Main project dependencies for Newspaper Scraper
+flask
+flask-socketio
+pymongo
+python-dotenv
+pyyaml
+tqdm
+loguru
+requests
+beautifulsoup4
+symspellpy
+pandas
+matplotlib
+seaborn
+playwright
+aiohttp
+python-dateutil
+typer
+ruff

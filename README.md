@@ -1,78 +1,78 @@
-```markdown
-# Newspaper Scraper
 
-A Python tool for scraping and analyzing newspaper archives.
+---
 
-## Project Overview
+## MongoDB Integration
 
-This application allows you to search through historical newspaper archives, extract articles, and process the content for analysis. It provides a configurable framework for working with different newspaper sources.
+This application supports storing processed articles in a MongoDB Atlas database for scalable storage and querying.
 
-## Features
+### MongoDB Setup
+1. Create a MongoDB Atlas cluster (or use your own MongoDB server).
+2. Obtain your MongoDB connection URI.
+3. Configure your credentials in `newspapers_scrap/config/secrets.yaml`:
 
-- Search newspaper archives using custom queries
-- Extract article content, titles, dates and newspaper information
-- Configurable for different newspaper sources
-- Respectful scraping with built-in delays
-```
-## Project Structure
-
-```
-newspapers_scrap/
-├── config.py           # Configuration settings
-├── scraper.py          # Core scraping functionality
-└── ...
-
-scripts/
-├── run_search.py       # Script to execute searches
-└── ...
-
-data/
-├── raw/                # Raw scraped data storage
-└── processed/          # Processed data storage
-
-logs/                   # Log files
+```yaml
+mongodb:
+  uri: "<your-mongodb-uri>"
+  database: "articles"
+  collection: "press_processed"
 ```
 
-## Getting Started
+- `uri`: Your MongoDB connection string (keep this secret!)
+- `database`: The database name (default: `articles`)
+- `collection`: The collection name (default: `press_processed`)
 
-### Prerequisites
+## Real-Time Progress & Web Interface
 
-- Python 3.x
-- pip
+The app features a Flask web interface with real-time progress updates via Socket.IO. This allows you to:
+- Push articles to MongoDB
+- Track progress with a live progress bar and status messages
+- See which articles are new or already present
 
-### Installation
-
-1. Clone this repository
-2. Install dependencies:
+### Running the Web App
 
 ```bash
-pip install -r requirements.txt
+python -m flask --app app run
 ```
 
-### Usage
+Or use your preferred method to start the Flask server. By default, the app runs on [http://127.0.0.1:5000](http://127.0.0.1:5000).
 
-Run a basic search:
+### Using the Web Interface
+1. Open the web app in your browser.
+2. Navigate to the article management section.
+3. Use the UI to push articles to MongoDB:
+    - Choose to push all or only new articles
+    - Watch real-time progress and status updates
 
+## Usage: Pushing Articles to MongoDB
+
+- The push feature is available via the web UI under the article blueprint.
+- Progress is tracked and displayed in real time.
+- Only new articles are pushed if you select the 'push only new' option (optimized by pre-fetching existing IDs).
+
+## Troubleshooting
+
+## Dependency Management
+
+This project uses [`pip-tools`](https://github.com/jazzband/pip-tools) for dependency management.
+
+- **Add new dependencies** to `requirements.in` (not `requirements.txt`).
+- Run `pip-compile requirements.in` to regenerate `requirements.txt` with pinned versions.
+- Install dependencies with:
+  ```bash
+  pip install -r requirements.txt
+  ```
+
+To install pip-tools:
 ```bash
-  python scripts/run_search.py
+pip install pip-tools
 ```
 
-## Configuration
 
-The project is configurable via `newspapers_scrap/config.py` where you can adjust:
+- **MongoDB connection errors**: Check your `secrets.yaml` for typos and ensure your IP is whitelisted in MongoDB Atlas.
+- **Socket.IO issues**: Ensure Flask-SocketIO is installed and not blocked by firewalls.
+- **Web UI not updating**: Refresh the page or check the browser console for errors.
+- **Dependencies**: Install all dependencies with `pip install -r requirements.txt`.
+- **Python version**: Use Python 3.7 or newer.
 
-- Request headers and delays
-- Search parameters
-- Website selectors for different elements
-- Target newspaper configurations
-- File paths for data storage
-- Search limits
-
-## License
-
-MIT License
-
-## Disclaimer
-
-This tool is intended for research purposes only. Always respect website terms of service and robots.txt when scraping content.
-```
+## Support
+For questions or issues, please open an issue or contact the maintainer.
